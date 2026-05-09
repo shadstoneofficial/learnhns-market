@@ -44,6 +44,21 @@ def _listing_is_available(listing):
     return listing and listing.status == 'active' and not listing.is_expired()
 
 
+def _hsd_api_style():
+    style = current_app.config.get('HSD_API_STYLE', 'raw')
+    return style.lower()
+
+
+def _hsd_endpoint(endpoint):
+    if _hsd_api_style() != 'firehsd':
+        return endpoint
+
+    normalized = endpoint.strip('/')
+    if not normalized:
+        return '/api/v1/status'
+    return f"/api/v1/{normalized}"
+
+
 def _hsd_request(endpoint, method='GET', payload=None):
     hsd_url = current_app.config.get('HSD_HTTP_URL')
     api_key = current_app.config.get('HSD_API_KEY')
@@ -51,8 +66,9 @@ def _hsd_request(endpoint, method='GET', payload=None):
     if not hsd_url:
         return None, ("HSD HTTP URL is not configured", 503, None)
 
-    url = urljoin(hsd_url.rstrip('/') + '/', endpoint.lstrip('/'))
-    auth = ('x', api_key) if api_key else None
+    mapped_endpoint = _hsd_endpoint(endpoint)
+    url = urljoin(hsd_url.rstrip('/') + '/', mapped_endpoint.lstrip('/'))
+    auth = ('x', api_key) if api_key and _hsd_api_style() != 'firehsd' else None
 
     try:
         response = requests.request(
@@ -63,7 +79,7 @@ def _hsd_request(endpoint, method='GET', payload=None):
             timeout=current_app.config.get('HSD_HTTP_TIMEOUT', 5),
         )
     except requests.RequestException as exc:
-        current_app.logger.warning("Failed HSD request %s %s: %s", method, endpoint, exc)
+        current_app.logger.warning("Failed HSD request %s %s: %s", method, mapped_endpoint, exc)
         return None, ("Could not reach HSD node", 503, str(exc))
 
     if response.status_code == 404:
@@ -74,7 +90,7 @@ def _hsd_request(endpoint, method='GET', payload=None):
         current_app.logger.warning(
             "HSD request failed for %s %s with status %s: %s",
             method,
-            endpoint,
+            mapped_endpoint,
             response.status_code,
             response.text[:500],
         )
@@ -142,6 +158,7 @@ def hsd_status():
 def get_hsd_status_payload():
     hsd_url = current_app.config.get('HSD_HTTP_URL')
     configured = bool(hsd_url)
+    api_style = _hsd_api_style()
 
     if not configured:
         return {
@@ -157,16 +174,37 @@ def get_hsd_status_payload():
             "configured": True,
             "reachable": False,
             "url": hsd_url,
+            "apiStyle": api_style,
             "error": message,
             "detail": detail,
         }, status
 
-    chain = info.get('chain', {}) if isinstance(info, dict) else {}
+    if api_style == 'firehsd':
+        chain_payload, chain_error = _hsd_request('/chain')
+        if chain_error:
+            message, status, detail = chain_error
+            return {
+                "configured": True,
+                "reachable": False,
+                "url": hsd_url,
+                "apiStyle": api_style,
+                "error": message,
+                "detail": detail,
+            }, status
+        chain = chain_payload.get('chain', {}) if isinstance(chain_payload, dict) else {}
+    else:
+        chain = info.get('chain', {}) if isinstance(info, dict) else {}
+
+    network = 'main' if api_style == 'firehsd' else (
+        info.get('network') if isinstance(info, dict) else None
+    )
+
     return {
         "configured": True,
         "reachable": True,
         "url": hsd_url,
-        "network": info.get('network') if isinstance(info, dict) else None,
+        "apiStyle": api_style,
+        "network": network,
         "version": info.get('version') if isinstance(info, dict) else None,
         "chain": chain,
         "height": chain.get('height'),

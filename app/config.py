@@ -31,9 +31,11 @@ class Config:
     MARKETPLACE_FEE_ADDRESS = os.getenv('MARKETPLACE_FEE_ADDRESS')
 
     # Optional full/indexed hsd node used to serve chain data to SPV clients.
-    # Example: HSD_HTTP_URL=http://127.0.0.1:12037 HSD_API_KEY=hunter2
+    # Example raw hsd: HSD_HTTP_URL=http://127.0.0.1:12037 HSD_API_KEY=hunter2
+    # Example Fire HSD: HSD_HTTP_URL=https://hsd.hns.au HSD_API_STYLE=firehsd
     HSD_HTTP_URL = os.getenv('HSD_HTTP_URL')
     HSD_API_KEY = os.getenv('HSD_API_KEY')
+    HSD_API_STYLE = os.getenv('HSD_API_STYLE', 'raw')
     HSD_HTTP_TIMEOUT = float(os.getenv('HSD_HTTP_TIMEOUT', '5'))
     
     # Domain configuration
