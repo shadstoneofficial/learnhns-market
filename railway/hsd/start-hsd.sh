@@ -13,8 +13,8 @@ echo "Starting HSD ${HSD_NETWORK} on ${HSD_HTTP_HOST}:${HSD_HTTP_PORT} with pref
 exec env -i \
   HOME=/root \
   NODE_ENV=production \
-  PATH="/opt/hsd/bin:/opt/hsd/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  node /opt/hsd/bin/node \
+  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/hsd/bin:/opt/hsd/node_modules/.bin" \
+  /usr/local/bin/node /opt/hsd/bin/node \
   --network="${HSD_NETWORK}" \
   --prefix="${HSD_PREFIX}" \
   --http-host="${HSD_HTTP_HOST}" \
