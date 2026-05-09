@@ -13,7 +13,7 @@ def index():
     min_price = request.args.get('min_price')
     # Basic active listings query
     listings = Listing.query.filter_by(status='active').order_by(Listing.created_at.desc()).all()
-    return render_template('index.html', listings=listings)
+    return render_template('index.html', listings=listings, hsd_readiness=_hsd_readiness())
 
 @main_bp.route('/upload')
 def upload():
@@ -45,9 +45,30 @@ def listing_detail(name):
         f"bob://x/fulfillauction?name={quote(listing.name, safe='')}"
         f"&presign={quote(proof_json, safe='')}"
     )
-    return render_template('listing.html', listing=listing, bob_deep_link=bob_deep_link)
+    return render_template(
+        'listing.html',
+        listing=listing,
+        bob_deep_link=bob_deep_link,
+        hsd_readiness=_hsd_readiness(),
+    )
 
 @main_bp.route('/listing/<name>/proof.json')
 def listing_proof(name):
     listing = Listing.query.filter_by(name=name, status='active').first_or_404()
     return jsonify(listing.proof_json)
+
+
+def _hsd_readiness():
+    status_data, _ = get_hsd_status_payload()
+    progress = status_data.get('progress')
+    progress_percent = None
+    if isinstance(progress, (int, float)):
+        progress_percent = max(0, min(100, progress * 100))
+
+    return {
+        "reachable": status_data.get('reachable', False),
+        "ready": status_data.get('reachable', False) and isinstance(progress, (int, float)) and progress >= 0.99,
+        "height": status_data.get('height'),
+        "progress_percent": progress_percent,
+        "error": status_data.get('error'),
+    }

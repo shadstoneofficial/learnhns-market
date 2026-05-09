@@ -23,6 +23,17 @@
     </div>
     
     <div class="text-center mt-10">
+        {% if hsd_readiness and not hsd_readiness.ready %}
+        <div class="mb-5 rounded-md border {% if hsd_readiness.reachable %}border-amber-200 bg-amber-50 text-amber-900{% else %}border-red-200 bg-red-50 text-red-900{% endif %} p-4 text-left">
+            <p class="font-semibold">Bob SPV buying is waiting for market node sync.</p>
+            {% if hsd_readiness.reachable %}
+                <p class="text-sm mt-1">Current sync: {% if hsd_readiness.progress_percent is not none %}{{ "%.2f"|format(hsd_readiness.progress_percent) }}%, height {{ hsd_readiness.height }}{% else %}in progress{% endif %}. The proof can be downloaded now, but SPV buying should wait until sync is near 100%.</p>
+            {% else %}
+                <p class="text-sm mt-1">{{ hsd_readiness.error or 'The hosted HSD node is currently unreachable.' }}</p>
+            {% endif %}
+            <a href="{{ url_for('main.status') }}" class="text-sm font-semibold underline mt-2 inline-block">View status</a>
+        </div>
+        {% endif %}
         <a href="{{ bob_deep_link }}"
            class="inline-block w-full sm:w-auto bg-indigo-600 text-white text-lg font-bold px-8 py-4 rounded-lg shadow-md hover:bg-indigo-700 transition transform hover:-translate-y-0.5">
             Buy with Bob Wallet

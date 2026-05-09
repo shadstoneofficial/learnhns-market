@@ -6,6 +6,22 @@
     <p class="text-gray-600">Fixed-price "Buy Now" domains directly via Bob Wallet.</p>
 </div>
 
+{% if hsd_readiness and not hsd_readiness.ready %}
+<div class="mb-8 rounded-md border {% if hsd_readiness.reachable %}border-amber-200 bg-amber-50 text-amber-900{% else %}border-red-200 bg-red-50 text-red-900{% endif %} p-4">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <p class="font-semibold">Bob SPV buying is not ready yet.</p>
+            {% if hsd_readiness.reachable %}
+                <p class="text-sm">The hosted HSD node is syncing{% if hsd_readiness.progress_percent is not none %} ({{ "%.2f"|format(hsd_readiness.progress_percent) }}%, height {{ hsd_readiness.height }}){% endif %}. Full-node Bob users can still inspect proofs.</p>
+            {% else %}
+                <p class="text-sm">{{ hsd_readiness.error or 'The hosted HSD node is currently unreachable.' }}</p>
+            {% endif %}
+        </div>
+        <a href="{{ url_for('main.status') }}" class="text-sm font-semibold underline">View status</a>
+    </div>
+</div>
+{% endif %}
+
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
     {% for listing in listings %}
     <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition">
