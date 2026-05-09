@@ -7,6 +7,12 @@ import re
 HNS_BASE_UNITS = Decimal("1000000")
 HEX_RE = re.compile(r'^[a-f0-9]+$', re.IGNORECASE)
 ADDRESS_RE = re.compile(r'^(hs|rs|ts|ss)1[a-zA-HJ-NP-Z0-9]{25,39}$', re.IGNORECASE)
+NETWORK_PREFIXES = {
+    'main': 'hs',
+    'regtest': 'rs',
+    'testnet': 'ts',
+    'simnet': 'ss',
+}
 
 def sanitize_html(text):
     if not text:
@@ -41,6 +47,28 @@ def pin_to_ipfs(file_path: str) -> str:
 def _is_hex(value, length):
     return isinstance(value, str) and len(value) == length and bool(HEX_RE.match(value))
 
+def _address_network(address):
+    match = ADDRESS_RE.match(address or '')
+    if not match:
+        return None
+    prefix = match.group(1).lower()
+    for network, network_prefix in NETWORK_PREFIXES.items():
+        if prefix == network_prefix:
+            return network
+    return None
+
+def _validate_allowed_network(address, label):
+    network = _address_network(address)
+    if not network:
+        return False, f"Invalid {label}"
+
+    allowed_networks = current_app.config.get('ALLOWED_PROOF_NETWORKS', ['main'])
+    if network not in allowed_networks:
+        allowed = ', '.join(allowed_networks)
+        return False, f"{label} uses {network}, but this environment only accepts: {allowed}"
+
+    return True, network
+
 def validate_shakedex_proof(proof_data: dict) -> tuple[bool, str]:
     try:
         required = [
@@ -64,10 +92,21 @@ def validate_shakedex_proof(proof_data: dict) -> tuple[bool, str]:
             return False, "Invalid locking output index"
         if not _is_hex(proof_data['publicKey'], 66):
             return False, "Invalid public key"
-        if not ADDRESS_RE.match(proof_data['paymentAddr']):
-            return False, "Invalid seller payment address"
-        if proof_data.get('feeAddr') and not ADDRESS_RE.match(proof_data['feeAddr']):
-            return False, "Invalid fee address"
+        ok, seller_network = _validate_allowed_network(
+            proof_data['paymentAddr'],
+            'Seller payment address',
+        )
+        if not ok:
+            return False, seller_network
+        if proof_data.get('feeAddr'):
+            ok, fee_network = _validate_allowed_network(
+                proof_data['feeAddr'],
+                'Fee address',
+            )
+            if not ok:
+                return False, fee_network
+            if fee_network != seller_network:
+                return False, "Fee address network must match seller payment address network"
         if not isinstance(proof_data['data'], list) or len(proof_data['data']) != 1:
             return False, "Fixed-price listings must contain exactly one proof entry"
 
