@@ -55,6 +55,22 @@
 
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="rounded-md border border-gray-200 p-4">
+                    <dt class="text-sm font-semibold text-gray-500">Backend</dt>
+                    <dd class="text-lg font-semibold text-gray-900">
+                        {% if status.apiStyle == 'firehsd' %}
+                            Fire HSD
+                        {% elif status.apiStyle == 'raw' %}
+                            Raw HSD
+                        {% else %}
+                            {{ status.apiStyle or 'Unknown' }}
+                        {% endif %}
+                    </dd>
+                </div>
+                <div class="rounded-md border border-gray-200 p-4">
+                    <dt class="text-sm font-semibold text-gray-500">Endpoint</dt>
+                    <dd class="text-sm font-mono text-gray-900 break-all">{{ status.url or 'Unknown' }}</dd>
+                </div>
+                <div class="rounded-md border border-gray-200 p-4">
                     <dt class="text-sm font-semibold text-gray-500">Network</dt>
                     <dd class="text-lg font-semibold text-gray-900">{{ status.network or 'Unknown' }}</dd>
                 </div>
