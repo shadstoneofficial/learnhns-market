@@ -67,6 +67,58 @@
     </section>
 
     <section class="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">Temporary Seller CLI Flow</h2>
+        <p class="text-gray-700">
+            This is the current developer test path for a low-value mainnet name. It is intentionally being moved into Bob Wallet so normal sellers do not need to run terminal commands.
+        </p>
+        <div class="mt-5 rounded-md border border-red-200 bg-red-50 p-4 text-red-800">
+            Use only a low-value name you are willing to sell. A valid proof is a real sell offer.
+        </div>
+        <ol class="mt-5 list-decimal pl-6 space-y-4 text-gray-700">
+            <li>
+                Confirm Shakedex can load hsd:
+                <pre class="mt-2 overflow-x-auto rounded bg-gray-100 p-3 text-sm text-gray-800">cd /Users/michaelmichelini/Documents/GitHub/shakedex
+node -e "const {NodeClient, WalletClient} = require('hsd/lib/client'); console.log('hsd client OK')"</pre>
+            </li>
+            <li>
+                Transfer the name into the Shakedex lock. Replace the wallet id, API key, and name:
+                <pre class="mt-2 overflow-x-auto rounded bg-gray-100 p-3 text-sm text-gray-800">node src/cli/main.js \
+  --network main \
+  --prefix ~/.shakedex-learnhns-mainnet-test \
+  --wallet-id YOUR_BOB_WALLET_ID \
+  --api-key YOUR_BOB_WALLET_API_KEY \
+  transfer-lock YOURNAME</pre>
+            </li>
+            <li>
+                Back up the entire Shakedex test folder after the transfer starts:
+                <pre class="mt-2 overflow-x-auto rounded bg-gray-100 p-3 text-sm text-gray-800">~/.shakedex-learnhns-mainnet-test</pre>
+            </li>
+            <li>
+                After the Handshake transfer lockup completes, finalize the lock:
+                <pre class="mt-2 overflow-x-auto rounded bg-gray-100 p-3 text-sm text-gray-800">node src/cli/main.js \
+  --network main \
+  --prefix ~/.shakedex-learnhns-mainnet-test \
+  --wallet-id YOUR_BOB_WALLET_ID \
+  --api-key YOUR_BOB_WALLET_API_KEY \
+  finalize-lock YOURNAME</pre>
+            </li>
+            <li>
+                After the finalize transaction confirms, create the fixed-price proof:
+                <pre class="mt-2 overflow-x-auto rounded bg-gray-100 p-3 text-sm text-gray-800">node src/cli/main.js \
+  --network main \
+  --prefix ~/.shakedex-learnhns-mainnet-test \
+  --wallet-id YOUR_BOB_WALLET_ID \
+  --api-key YOUR_BOB_WALLET_API_KEY \
+  create-fixed YOURNAME 42 \
+  --out ~/Desktop/YOURNAME-learnhns-mainnet-proof.json</pre>
+            </li>
+        </ol>
+        <p class="mt-5 text-gray-700">
+            The first live test used lowercase Bob wallet id <code class="rounded bg-gray-100 px-1">flamingo26</code>; Bob's displayed wallet label may be uppercase while the internal wallet id is lowercase.
+        </p>
+    </section>
+
+    <section class="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
         <h2 class="text-2xl font-bold text-gray-900 mb-4">Bob Wallet And SPV</h2>
         <p class="text-gray-700">
             New Bob Wallet installs are moving toward SPV by default. SPV keeps normal wallet usage lightweight,
