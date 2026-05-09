@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from sqlalchemy.exc import IntegrityError
 from app.models import db, Listing
 from app.utils import (
     fixed_price_listing_fields,
@@ -62,8 +63,12 @@ def upload_proof():
         expires_at=listing_fields['expires_at']
     )
     
-    db.session.add(listing)
-    db.session.commit()
+    try:
+        db.session.add(listing)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": f"A listing for {listing.name} already exists"}), 409
     
     send_gfavip_webhook(
         title="🎉 New HNS Listing!",

@@ -11,8 +11,9 @@
     <header class="bg-white shadow-sm border-b border-gray-200">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
             <a href="{{ url_for('main.index') }}" class="text-xl font-bold text-indigo-600">HNS Market</a>
-            <nav>
+            <nav class="flex items-center gap-5">
                 <a href="{{ url_for('main.index') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Browse</a>
+                <a href="{{ url_for('main.upload') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Upload</a>
             </nav>
         </div>
     </header>

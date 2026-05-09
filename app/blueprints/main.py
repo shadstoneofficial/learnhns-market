@@ -14,6 +14,10 @@ def index():
     listings = Listing.query.filter_by(status='active').order_by(Listing.created_at.desc()).all()
     return render_template('index.html', listings=listings)
 
+@main_bp.route('/upload')
+def upload():
+    return render_template('upload.html')
+
 @main_bp.route('/listing/<name>')
 def listing_detail(name):
     listing = Listing.query.filter_by(name=name, status='active').first_or_404()

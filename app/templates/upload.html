@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-100">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold mb-2 text-gray-900">Upload Proof</h1>
+        <p class="text-gray-600">Create a fixed-price listing from a Shakedex proof JSON file.</p>
+    </div>
+
+    <form id="upload-form" class="space-y-6">
+        <div>
+            <label for="proof" class="block text-sm font-semibold text-gray-800 mb-2">Proof JSON</label>
+            <input id="proof" name="proof" type="file" accept=".json,application/json" required
+                   class="block w-full text-sm text-gray-700 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100">
+        </div>
+
+        <div>
+            <label for="description" class="block text-sm font-semibold text-gray-800 mb-2">Description</label>
+            <textarea id="description" name="description" rows="4"
+                      class="block w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
+        </div>
+
+        <button id="submit-button" type="submit"
+                class="inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-5 py-3 text-base font-bold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-400 sm:w-auto">
+            Upload Proof
+        </button>
+    </form>
+
+    <div id="upload-result" class="mt-6 hidden rounded-md border p-4 text-sm"></div>
+</div>
+
+<script>
+const form = document.getElementById('upload-form');
+const button = document.getElementById('submit-button');
+const result = document.getElementById('upload-result');
+
+function showResult(message, ok, link) {
+    result.className = ok
+        ? 'mt-6 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800'
+        : 'mt-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800';
+    result.innerHTML = link
+        ? `${message} <a class="font-semibold underline" href="${link}">View listing</a>`
+        : message;
+}
+
+form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    button.disabled = true;
+    button.textContent = 'Uploading...';
+    result.className = 'mt-6 hidden rounded-md border p-4 text-sm';
+    result.textContent = '';
+
+    try {
+        const response = await fetch('{{ url_for("api.upload_proof") }}', {
+            method: 'POST',
+            body: new FormData(form),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            showResult(data.error || 'Upload failed.', false);
+            return;
+        }
+
+        showResult(
+            `Uploaded ${data.name}.`,
+            true,
+            `{{ url_for("main.listing_detail", name="__NAME__") }}`.replace('__NAME__', encodeURIComponent(data.name))
+        );
+        form.reset();
+    } catch (error) {
+        showResult(error.message || 'Upload failed.', false);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Upload Proof';
+    }
+});
+</script>
+{% endblock %}
