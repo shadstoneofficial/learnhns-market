@@ -16,6 +16,67 @@ import json
 api_bp = Blueprint('api', __name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day"])
 
+
+def _bob_auction_from_listing(listing):
+    proof = listing.proof_json
+    bids = proof.get('data', [])
+    return {
+        "id": listing.id,
+        "name": proof["name"],
+        "lockingTxHash": proof["lockingTxHash"],
+        "lockingOutputIdx": proof["lockingOutputIdx"],
+        "publicKey": proof["publicKey"],
+        "paymentAddr": proof["paymentAddr"],
+        "feeAddr": proof.get("feeAddr"),
+        "bids": bids,
+        "data": bids,
+        "version": proof.get("version", 2),
+        "description": listing.description,
+        "createdAt": listing.created_at.isoformat() if listing.created_at else None,
+        "expiresAt": listing.expires_at.isoformat() if listing.expires_at else None,
+        "url": f"/listing/{listing.name}",
+    }
+
+
+@api_bp.route('/v1/fee_info', methods=['GET'])
+@api_bp.route('/v2/fee_info', methods=['GET'])
+def fee_info():
+    rate = current_app.config['MARKETPLACE_FEE_RATE']
+    address = current_app.config['MARKETPLACE_FEE_ADDRESS']
+    if rate < 0 or rate > 10000:
+        return jsonify({"error": "Marketplace fee rate is invalid"}), 503
+    if rate > 0 and not address:
+        return jsonify({"error": "Marketplace fee address is not configured"}), 503
+
+    return jsonify({
+        "rate": rate,
+        "address": address,
+        "addr": address,
+    })
+
+
+@api_bp.route('/v2/auctions', methods=['GET'])
+def auctions():
+    try:
+        page = max(int(request.args.get('page', 1)), 1)
+        per_page = min(max(int(request.args.get('per_page', 20)), 1), 100)
+    except ValueError:
+        return jsonify({"error": "Invalid pagination"}), 400
+
+    active_listings = [
+        listing for listing in Listing.query.filter_by(status='active').order_by(Listing.created_at.desc()).all()
+        if not listing.is_expired()
+    ]
+    total = len(active_listings)
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_listings = active_listings[start:end]
+
+    return jsonify({
+        "total": total,
+        "auctions": [_bob_auction_from_listing(listing) for listing in page_listings],
+    })
+
 @api_bp.route('/upload-proof', methods=['POST'])
 @limiter.limit("10 per hour")  # per IP
 def upload_proof():

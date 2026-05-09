@@ -24,6 +24,11 @@ class Config:
     
     # GFAVIP Webhook
     GFAVIP_WEBHOOK_URL = os.getenv('GFAVIP_WEBHOOK_URL')
+
+    # Marketplace fee policy.
+    # Rate is expressed in basis points: 250 = 2.5%, 100 = 1%.
+    MARKETPLACE_FEE_RATE = int(os.getenv('MARKETPLACE_FEE_RATE', '0'))
+    MARKETPLACE_FEE_ADDRESS = os.getenv('MARKETPLACE_FEE_ADDRESS')
     
     # Domain configuration
     # SERVER_NAME = os.getenv('SERVER_NAME', 'market.learnhns.com')
