@@ -2,10 +2,15 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from app.models import db, Listing
-from app.utils import validate_shakedex_proof, pin_to_ipfs, sanitize_html, send_gfavip_webhook
+from app.utils import (
+    fixed_price_listing_fields,
+    validate_shakedex_proof,
+    pin_to_ipfs,
+    sanitize_html,
+    send_gfavip_webhook,
+)
 import os
 import json
-from datetime import datetime
 
 api_bp = Blueprint('api', __name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day"])
@@ -45,15 +50,16 @@ def upload_proof():
         
     os.remove(temp_path)
     
+    listing_fields = fixed_price_listing_fields(proof_data)
     listing = Listing(
-        name=proof_data.get('name'),
-        price_hns=proof_data.get('price'),
+        name=listing_fields['name'],
+        price_hns=listing_fields['price_hns'],
         description=description,
-        seller_hns_address=proof_data.get('seller_address', 'unknown'),
+        seller_hns_address=listing_fields['seller_hns_address'],
         gfavip_user_id=gfavip_user_id,
         ipfs_cid=cid,
         proof_json=proof_data,
-        expires_at=datetime.utcnow() # To be replaced with actual expiration from proof
+        expires_at=listing_fields['expires_at']
     )
     
     db.session.add(listing)

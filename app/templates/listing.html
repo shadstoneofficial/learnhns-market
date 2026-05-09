@@ -23,11 +23,14 @@
     </div>
     
     <div class="text-center mt-10">
-        <a href="bob://shakedex/buy?cid={{ listing.ipfs_cid }}&name={{ listing.name }}&price={{ listing.price_hns }}" 
+        <a href="{{ bob_deep_link }}"
            class="inline-block w-full sm:w-auto bg-indigo-600 text-white text-lg font-bold px-8 py-4 rounded-lg shadow-md hover:bg-indigo-700 transition transform hover:-translate-y-0.5">
             Buy with Bob Wallet
         </a>
-        <p class="text-sm text-gray-500 mt-4">Opens Bob Wallet directly. Ensure the app is installed and configured.</p>
+        <div class="mt-4">
+            <a href="{{ url_for('main.listing_proof', name=listing.name) }}" class="text-sm text-indigo-600 hover:underline">Download proof JSON</a>
+        </div>
+        <p class="text-sm text-gray-500 mt-3">Opens Bob Wallet directly. If the app does not open, download the proof JSON and load it in Bob Wallet.</p>
     </div>
 </div>
 {% endblock %}

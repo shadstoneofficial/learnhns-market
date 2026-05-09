@@ -1,4 +1,7 @@
-from flask import Blueprint, render_template, request
+import json
+from urllib.parse import quote
+
+from flask import Blueprint, jsonify, render_template, request
 from app.models import Listing
 
 main_bp = Blueprint('main', __name__)
@@ -14,4 +17,14 @@ def index():
 @main_bp.route('/listing/<name>')
 def listing_detail(name):
     listing = Listing.query.filter_by(name=name, status='active').first_or_404()
-    return render_template('listing.html', listing=listing)
+    proof_json = json.dumps(listing.proof_json, separators=(',', ':'))
+    bob_deep_link = (
+        f"bob://x/fulfillauction?name={quote(listing.name, safe='')}"
+        f"&presign={quote(proof_json, safe='')}"
+    )
+    return render_template('listing.html', listing=listing, bob_deep_link=bob_deep_link)
+
+@main_bp.route('/listing/<name>/proof.json')
+def listing_proof(name):
+    listing = Listing.query.filter_by(name=name, status='active').first_or_404()
+    return jsonify(listing.proof_json)
