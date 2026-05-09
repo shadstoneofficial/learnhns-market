@@ -135,29 +135,34 @@ def auctions():
 
 @api_bp.route('/v2/hsd/status', methods=['GET'])
 def hsd_status():
+    payload, status = get_hsd_status_payload()
+    return jsonify(payload), status
+
+
+def get_hsd_status_payload():
     hsd_url = current_app.config.get('HSD_HTTP_URL')
     configured = bool(hsd_url)
 
     if not configured:
-        return jsonify({
+        return {
             "configured": False,
             "reachable": False,
             "error": "HSD HTTP URL is not configured",
-        }), 503
+        }, 503
 
     info, error = _hsd_request('/')
     if error:
         message, status, detail = error
-        return jsonify({
+        return {
             "configured": True,
             "reachable": False,
             "url": hsd_url,
             "error": message,
             "detail": detail,
-        }), status
+        }, status
 
     chain = info.get('chain', {}) if isinstance(info, dict) else {}
-    return jsonify({
+    return {
         "configured": True,
         "reachable": True,
         "url": hsd_url,
@@ -166,7 +171,7 @@ def hsd_status():
         "chain": chain,
         "height": chain.get('height'),
         "progress": chain.get('progress'),
-    })
+    }, 200
 
 
 @api_bp.route('/v2/listings/<name>/coin', methods=['GET'])

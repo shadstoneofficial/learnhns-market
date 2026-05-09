@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+    <div class="mb-8">
+        <p class="text-sm uppercase tracking-wide text-indigo-600 font-semibold mb-2">Infrastructure</p>
+        <h1 class="text-4xl font-bold text-gray-900">Market Status</h1>
+        <p class="text-gray-600 mt-3">
+            LearnHNS Market uses a hosted full HSD node for Bob Wallet SPV marketplace purchases.
+        </p>
+    </div>
+
+    <div class="space-y-6">
+        <div class="rounded-md border {% if status.reachable %}border-green-200 bg-green-50{% else %}border-red-200 bg-red-50{% endif %} p-5">
+            <div class="flex items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-xl font-semibold {% if status.reachable %}text-green-900{% else %}text-red-900{% endif %}">
+                        HSD Node
+                    </h2>
+                    <p class="{% if status.reachable %}text-green-800{% else %}text-red-800{% endif %}">
+                        {% if status.reachable %}
+                            Reachable and syncing.
+                        {% else %}
+                            Not reachable.
+                        {% endif %}
+                    </p>
+                </div>
+                <span class="rounded-full px-3 py-1 text-sm font-semibold {% if status.reachable %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                    {% if status.reachable %}Online{% else %}Offline{% endif %}
+                </span>
+            </div>
+        </div>
+
+        {% if status.reachable %}
+            <div>
+                <div class="flex items-end justify-between mb-2">
+                    <div>
+                        <h2 class="text-xl font-semibold text-gray-900">Mainnet Sync</h2>
+                        <p class="text-gray-600">Bob SPV buying should wait until this is near 100%.</p>
+                    </div>
+                    {% if progress_percent is not none %}
+                        <div class="text-2xl font-bold text-indigo-600">{{ "%.2f"|format(progress_percent) }}%</div>
+                    {% endif %}
+                </div>
+
+                {% if progress_percent is not none %}
+                    <div class="h-3 w-full rounded-full bg-gray-200 overflow-hidden">
+                        <div
+                            class="h-full rounded-full bg-indigo-600"
+                            style="width: {{ progress_percent }}%;"
+                        ></div>
+                    </div>
+                {% endif %}
+            </div>
+
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="rounded-md border border-gray-200 p-4">
+                    <dt class="text-sm font-semibold text-gray-500">Network</dt>
+                    <dd class="text-lg font-semibold text-gray-900">{{ status.network or 'Unknown' }}</dd>
+                </div>
+                <div class="rounded-md border border-gray-200 p-4">
+                    <dt class="text-sm font-semibold text-gray-500">Height</dt>
+                    <dd class="text-lg font-semibold text-gray-900">{{ status.height or 'Unknown' }}</dd>
+                </div>
+                <div class="rounded-md border border-gray-200 p-4">
+                    <dt class="text-sm font-semibold text-gray-500">Version</dt>
+                    <dd class="text-lg font-semibold text-gray-900">{{ status.version or 'Unknown' }}</dd>
+                </div>
+                <div class="rounded-md border border-gray-200 p-4">
+                    <dt class="text-sm font-semibold text-gray-500">Mode</dt>
+                    <dd class="text-lg font-semibold text-gray-900">
+                        {% if status.chain and status.chain.options %}
+                            {% if status.chain.options.spv %}SPV{% else %}Full node{% endif %}
+                        {% else %}
+                            Unknown
+                        {% endif %}
+                    </dd>
+                </div>
+            </dl>
+        {% else %}
+            <div class="rounded-md border border-gray-200 p-5">
+                <h2 class="text-xl font-semibold text-gray-900 mb-2">Status Detail</h2>
+                <p class="text-gray-700">{{ status.error or 'No error detail returned.' }}</p>
+            </div>
+        {% endif %}
+
+        <div class="rounded-md border border-gray-200 p-5">
+            <h2 class="text-xl font-semibold text-gray-900 mb-2">API</h2>
+            <a href="{{ url_for('api.hsd_status') }}" class="text-indigo-600 hover:underline font-medium">
+                View JSON status
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

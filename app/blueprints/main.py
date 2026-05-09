@@ -2,6 +2,7 @@ import json
 from urllib.parse import quote
 
 from flask import Blueprint, jsonify, render_template, request
+from app.blueprints.api import get_hsd_status_payload
 from app.models import Listing
 
 main_bp = Blueprint('main', __name__)
@@ -17,6 +18,20 @@ def index():
 @main_bp.route('/upload')
 def upload():
     return render_template('upload.html')
+
+@main_bp.route('/status')
+def status():
+    status_data, _ = get_hsd_status_payload()
+    progress = status_data.get('progress')
+    progress_percent = None
+    if isinstance(progress, (int, float)):
+        progress_percent = max(0, min(100, progress * 100))
+
+    return render_template(
+        'status.html',
+        status=status_data,
+        progress_percent=progress_percent,
+    )
 
 @main_bp.route('/listing/<name>')
 def listing_detail(name):
