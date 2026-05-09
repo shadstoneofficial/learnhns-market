@@ -44,45 +44,53 @@ def _listing_is_available(listing):
     return listing and listing.status == 'active' and not listing.is_expired()
 
 
-def _fetch_hsd_coin(tx_hash, output_index):
+def _hsd_request(endpoint, method='GET', payload=None):
     hsd_url = current_app.config.get('HSD_HTTP_URL')
     api_key = current_app.config.get('HSD_API_KEY')
 
     if not hsd_url:
-        return None, ("HSD HTTP URL is not configured", 503)
+        return None, ("HSD HTTP URL is not configured", 503, None)
 
-    endpoint = f"/coin/{tx_hash}/{output_index}"
     url = urljoin(hsd_url.rstrip('/') + '/', endpoint.lstrip('/'))
     auth = ('x', api_key) if api_key else None
 
     try:
-        response = requests.get(
+        response = requests.request(
+            method,
             url,
             auth=auth,
+            json=payload,
             timeout=current_app.config.get('HSD_HTTP_TIMEOUT', 5),
         )
     except requests.RequestException as exc:
-        current_app.logger.warning("Failed to fetch hsd coin %s:%s: %s", tx_hash, output_index, exc)
-        return None, ("Could not reach HSD node", 503)
+        current_app.logger.warning("Failed HSD request %s %s: %s", method, endpoint, exc)
+        return None, ("Could not reach HSD node", 503, str(exc))
 
     if response.status_code == 404:
-        return None, ("Listing coin was not found or is already spent", 404)
+        return None, ("HSD resource not found", 404, response.text[:500])
     if response.status_code == 401:
-        return None, ("HSD API key is invalid", 503)
+        return None, ("HSD API key is invalid", 503, response.text[:500])
     if response.status_code >= 400:
         current_app.logger.warning(
-            "HSD coin lookup failed for %s:%s with status %s: %s",
-            tx_hash,
-            output_index,
+            "HSD request failed for %s %s with status %s: %s",
+            method,
+            endpoint,
             response.status_code,
             response.text[:500],
         )
-        return None, ("HSD coin lookup failed", 503)
+        return None, ("HSD request failed", 503, response.text[:500])
 
     try:
         return response.json(), None
     except ValueError:
-        return None, ("HSD returned invalid JSON", 503)
+        return None, ("HSD returned invalid JSON", 503, response.text[:500])
+
+
+def _fetch_hsd_coin(tx_hash, output_index):
+    coin, error = _hsd_request(f"/coin/{tx_hash}/{output_index}")
+    if error and error[1] == 404:
+        return None, ("Listing coin was not found or is already spent", 404, error[2])
+    return coin, error
 
 
 @api_bp.route('/v1/fee_info', methods=['GET'])
@@ -125,6 +133,42 @@ def auctions():
     })
 
 
+@api_bp.route('/v2/hsd/status', methods=['GET'])
+def hsd_status():
+    hsd_url = current_app.config.get('HSD_HTTP_URL')
+    configured = bool(hsd_url)
+
+    if not configured:
+        return jsonify({
+            "configured": False,
+            "reachable": False,
+            "error": "HSD HTTP URL is not configured",
+        }), 503
+
+    info, error = _hsd_request('/')
+    if error:
+        message, status, detail = error
+        return jsonify({
+            "configured": True,
+            "reachable": False,
+            "url": hsd_url,
+            "error": message,
+            "detail": detail,
+        }), status
+
+    chain = info.get('chain', {}) if isinstance(info, dict) else {}
+    return jsonify({
+        "configured": True,
+        "reachable": True,
+        "url": hsd_url,
+        "network": info.get('network') if isinstance(info, dict) else None,
+        "version": info.get('version') if isinstance(info, dict) else None,
+        "chain": chain,
+        "height": chain.get('height'),
+        "progress": chain.get('progress'),
+    })
+
+
 @api_bp.route('/v2/listings/<name>/coin', methods=['GET'])
 def listing_coin(name):
     listing = Listing.query.filter_by(name=name).first()
@@ -137,7 +181,7 @@ def listing_coin(name):
     coin, error = _fetch_hsd_coin(tx_hash, output_index)
 
     if error:
-        message, status = error
+        message, status = error[:2]
         return jsonify({"error": message}), status
 
     return jsonify({
