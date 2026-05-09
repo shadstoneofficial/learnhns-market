@@ -37,3 +37,11 @@ Railway private networking uses service DNS names like:
 ```
 
 Use `http://` for private service-to-service traffic.
+
+## Deploy
+
+Deploy this folder as the Railway service root so Railway uses the HSD Dockerfile instead of the main market app Dockerfile:
+
+```txt
+railway up railway/hsd --service learnhns-hsd --detach --path-as-root
+```
