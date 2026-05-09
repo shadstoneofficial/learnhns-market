@@ -1,6 +1,5 @@
 import requests
 import bleach
-from pinata import Pinata
 from flask import current_app
 import json
 
@@ -24,12 +23,15 @@ def send_gfavip_webhook(title: str, message: str, color: str = "#10b981"):
         pass  # fail gracefully
 
 def pin_to_ipfs(file_path: str) -> str:
-    pinata = Pinata(
-        pinata_api_key=current_app.config['PINATA_API_KEY'],
-        pinata_secret_api_key=current_app.config['PINATA_SECRET_KEY']
-    )
-    response = pinata.pin_file_to_ipfs(file_path)
-    return response['IpfsHash']
+    url = "https://api.pinata.cloud/pinning/pinFileToIPFS"
+    headers = {
+        "pinata_api_key": current_app.config['PINATA_API_KEY'],
+        "pinata_secret_api_key": current_app.config['PINATA_SECRET_KEY']
+    }
+    with open(file_path, 'rb') as f:
+        response = requests.post(url, files={'file': f}, headers=headers)
+    response.raise_for_status()
+    return response.json()['IpfsHash']
 
 def validate_shakedex_proof(proof_data: dict) -> tuple[bool, str]:
     try:
