@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-100">
+    <div class="mb-6">
+        <a href="{{ url_for('main.index') }}" class="text-indigo-600 hover:underline font-medium">&larr; Back to Listings</a>
+    </div>
+    
+    <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">{{ listing.name }}</h1>
+    <div class="text-3xl text-indigo-600 font-bold mb-6">{{ listing.price_hns }} <span class="text-xl text-gray-500 font-medium">HNS</span></div>
+    
+    <div class="mb-8 prose text-gray-700">
+        {% if listing.description %}
+            {{ listing.description | safe }}
+        {% else %}
+            <p class="italic text-gray-500">No description provided.</p>
+        {% endif %}
+    </div>
+    
+    <div class="bg-gray-50 p-5 rounded-lg mb-8 text-sm text-gray-600 border border-gray-200 shadow-inner">
+        <p class="mb-2"><strong class="text-gray-800">Seller HNS Address:</strong> <span class="font-mono">{{ listing.seller_hns_address }}</span></p>
+        <p><strong class="text-gray-800">Listed On:</strong> {{ listing.created_at.strftime('%Y-%m-%d') }}</p>
+    </div>
+    
+    <div class="text-center mt-10">
+        <a href="bob://shakedex/buy?cid={{ listing.ipfs_cid }}&name={{ listing.name }}&price={{ listing.price_hns }}" 
+           class="inline-block w-full sm:w-auto bg-indigo-600 text-white text-lg font-bold px-8 py-4 rounded-lg shadow-md hover:bg-indigo-700 transition transform hover:-translate-y-0.5">
+            Buy with Bob Wallet
+        </a>
+        <p class="text-sm text-gray-500 mt-4">Opens Bob Wallet directly. Ensure the app is installed and configured.</p>
+    </div>
+</div>
+{% endblock %}

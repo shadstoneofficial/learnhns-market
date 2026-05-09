@@ -1,0 +1,8 @@
+temp-specs/
+__pycache__/
+*.pyc
+.env
+uploads/
+venv/
+env/
+.pytest_cache/
