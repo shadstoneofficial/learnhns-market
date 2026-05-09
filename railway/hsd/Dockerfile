@@ -1,6 +1,15 @@
-FROM node:20-alpine AS build
+FROM node:20-bookworm-slim AS build
 
-RUN apk add --no-cache bash g++ gcc git gmp-dev make python3 unbound-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  g++ \
+  gcc \
+  git \
+  libgmp-dev \
+  libunbound-dev \
+  make \
+  python3 \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/hsd
 
@@ -10,9 +19,13 @@ ARG HSD_REF=master
 RUN git clone --depth=1 --branch="${HSD_REF}" "${HSD_REPO}" .
 RUN npm install --omit=dev
 
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
-RUN apk add --no-cache bash gmp-dev unbound-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  libgmp10 \
+  libunbound8 \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/hsd
 
