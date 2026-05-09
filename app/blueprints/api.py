@@ -109,6 +109,13 @@ def _fetch_hsd_coin(tx_hash, output_index):
     return coin, error
 
 
+def _fetch_hsd_tx(tx_hash):
+    tx, error = _hsd_request(f"/tx/{tx_hash}")
+    if error and error[1] == 404:
+        return None, ("Transaction was not found", 404, error[2])
+    return tx, error
+
+
 @api_bp.route('/v1/fee_info', methods=['GET'])
 @api_bp.route('/v2/fee_info', methods=['GET'])
 def fee_info():
@@ -232,6 +239,34 @@ def listing_coin(name):
         "lockingTxHash": tx_hash,
         "lockingOutputIdx": output_index,
         "coin": coin,
+    })
+
+
+@api_bp.route('/v2/tx/<tx_hash>/status', methods=['GET'])
+def tx_status(tx_hash):
+    tx, error = _fetch_hsd_tx(tx_hash)
+    if error:
+        message, status = error[:2]
+        return jsonify({"error": message}), status
+
+    chain_payload, status = get_hsd_status_payload()
+    chain_height = chain_payload.get('height') if status == 200 else None
+    tx_height = tx.get('height') if isinstance(tx, dict) else None
+    confirmations = tx.get('confirmations') if isinstance(tx, dict) else None
+    if confirmations is None and isinstance(chain_height, int) and isinstance(tx_height, int) and tx_height >= 0:
+        confirmations = max(chain_height - tx_height + 1, 0)
+
+    return jsonify({
+        "hash": tx_hash,
+        "found": True,
+        "confirmed": isinstance(tx_height, int) and tx_height >= 0,
+        "height": tx_height,
+        "confirmations": confirmations,
+        "block": tx.get('block') if isinstance(tx, dict) else None,
+        "mtime": tx.get('mtime') if isinstance(tx, dict) else None,
+        "fee": tx.get('fee') if isinstance(tx, dict) else None,
+        "chainHeight": chain_height,
+        "tx": tx,
     })
 
 @api_bp.route('/upload-proof', methods=['POST'])
