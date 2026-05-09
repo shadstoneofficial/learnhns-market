@@ -19,6 +19,10 @@ def index():
 def upload():
     return render_template('upload.html')
 
+@main_bp.route('/docs')
+def docs():
+    return render_template('docs.html')
+
 @main_bp.route('/status')
 def status():
     status_data, _ = get_hsd_status_payload()

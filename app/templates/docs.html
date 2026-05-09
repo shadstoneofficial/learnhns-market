@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-8">
+    <section class="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
+        <p class="text-sm uppercase tracking-wide text-indigo-600 font-semibold mb-2">Documentation</p>
+        <h1 class="text-4xl font-bold text-gray-900">LearnHNS Market Docs</h1>
+        <p class="text-gray-600 mt-4 text-lg">
+            LearnHNS Market is rebuilding the Shakedex-style Handshake marketplace flow for Bob Wallet.
+            The current focus is fixed-price listings, Bob-compatible marketplace APIs, and SPV-friendly buying.
+        </p>
+    </section>
+
+    <section class="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">Current Status</h2>
+        <div class="grid gap-4 sm:grid-cols-2">
+            <div class="rounded-md border border-green-200 bg-green-50 p-4">
+                <h3 class="font-semibold text-green-900">Working</h3>
+                <ul class="mt-2 space-y-2 text-green-800">
+                    <li>Fixed-price Shakedex proof upload</li>
+                    <li>Public listing pages</li>
+                    <li>Bob-compatible auction API</li>
+                    <li>Hosted HSD status endpoint</li>
+                    <li>Bob SPV purchase fallback code</li>
+                </ul>
+            </div>
+            <div class="rounded-md border border-amber-200 bg-amber-50 p-4">
+                <h3 class="font-semibold text-amber-900">In Progress</h3>
+                <ul class="mt-2 space-y-2 text-amber-800">
+                    <li>Railway HSD mainnet sync</li>
+                    <li>End-to-end mainnet Bob SPV purchase verification</li>
+                    <li>Native Bob seller flow polish</li>
+                    <li>Marketplace fee configuration</li>
+                </ul>
+            </div>
+        </div>
+        <p class="mt-5 text-gray-700">
+            Check live infrastructure progress on the <a href="{{ url_for('main.status') }}" class="text-indigo-600 hover:underline font-medium">status page</a>.
+        </p>
+    </section>
+
+    <section class="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">For Buyers</h2>
+        <ol class="list-decimal pl-6 space-y-3 text-gray-700">
+            <li>Browse listings on LearnHNS Market or inside Bob Wallet's Exchange marketplace.</li>
+            <li>Open a listing to inspect the name, price, seller address, and proof JSON.</li>
+            <li>Use Bob Wallet to buy. Bob constructs the purchase transaction from the Shakedex proof.</li>
+            <li>If Bob is in SPV mode, Bob asks LearnHNS Market for the listing coin data it cannot get locally.</li>
+            <li>Buying should wait until the hosted HSD node is fully synced.</li>
+        </ol>
+        <div class="mt-5 rounded-md border border-red-200 bg-red-50 p-4 text-red-800">
+            Test/regtest proof JSON should never be used with production Bob Wallet.
+        </div>
+    </section>
+
+    <section class="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">For Sellers</h2>
+        <ol class="list-decimal pl-6 space-y-3 text-gray-700">
+            <li>Create a Shakedex proof for a name you own.</li>
+            <li>Upload the proof JSON on the <a href="{{ url_for('main.upload') }}" class="text-indigo-600 hover:underline font-medium">upload page</a>.</li>
+            <li>The market validates the proof and creates a public listing.</li>
+            <li>Bob Wallet can read that listing through the Bob-compatible marketplace API.</li>
+        </ol>
+        <p class="mt-5 text-gray-700">
+            Native seller tools inside Bob Wallet are planned so sellers do not need terminal commands.
+        </p>
+    </section>
+
+    <section class="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">Bob Wallet And SPV</h2>
+        <p class="text-gray-700">
+            New Bob Wallet installs are moving toward SPV by default. SPV keeps normal wallet usage lightweight,
+            but it does not keep the full coin database needed by Shakedex purchases.
+        </p>
+        <div class="mt-5 rounded-md border border-gray-200 p-4 bg-gray-50">
+            <p class="font-semibold text-gray-900 mb-2">LearnHNS SPV buying flow</p>
+            <pre class="overflow-x-auto text-sm text-gray-800">Bob Wallet SPV -> LearnHNS Market -> hosted full HSD node -> listing coin data</pre>
+        </div>
+        <p class="mt-5 text-gray-700">
+            Bob still uses the buyer's own wallet to fund and authorize the purchase. LearnHNS Market does not need the buyer's seed phrase or private keys.
+        </p>
+    </section>
+
+    <section class="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">API Endpoints</h2>
+        <div class="space-y-4">
+            <div>
+                <h3 class="font-semibold text-gray-900">Bob marketplace listings</h3>
+                <code class="block mt-1 rounded bg-gray-100 p-3 text-sm text-gray-800">GET /api/v2/auctions</code>
+            </div>
+            <div>
+                <h3 class="font-semibold text-gray-900">Marketplace fee policy</h3>
+                <code class="block mt-1 rounded bg-gray-100 p-3 text-sm text-gray-800">GET /api/v2/fee_info</code>
+            </div>
+            <div>
+                <h3 class="font-semibold text-gray-900">Hosted HSD status</h3>
+                <code class="block mt-1 rounded bg-gray-100 p-3 text-sm text-gray-800">GET /api/v2/hsd/status</code>
+            </div>
+            <div>
+                <h3 class="font-semibold text-gray-900">Listing-scoped coin lookup</h3>
+                <code class="block mt-1 rounded bg-gray-100 p-3 text-sm text-gray-800">GET /api/v2/listings/&lt;name&gt;/coin</code>
+            </div>
+        </div>
+    </section>
+
+    <section class="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">For HSD Node Helpers</h2>
+        <p class="text-gray-700">
+            The project benefits from a fully synced mainnet HSD node that can answer public chain-data lookups for active listings.
+            We do not need wallet access, seeds, private keys, or custody.
+        </p>
+        <ul class="mt-4 list-disc pl-6 space-y-2 text-gray-700">
+            <li>Mainnet full node, not SPV</li>
+            <li>Prefer <code class="rounded bg-gray-100 px-1">--no-wallet</code></li>
+            <li>Backend-only API access with an API key</li>
+            <li>Critical endpoint: <code class="rounded bg-gray-100 px-1">GET /coin/&lt;txHash&gt;/&lt;index&gt;</code></li>
+        </ul>
+    </section>
+</div>
+{% endblock %}
