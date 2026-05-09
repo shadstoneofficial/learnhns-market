@@ -115,6 +115,13 @@
             <li>Backend-only API access with an API key</li>
             <li>Critical endpoint: <code class="rounded bg-gray-100 px-1">GET /coin/&lt;txHash&gt;/&lt;index&gt;</code></li>
         </ul>
+        <div class="mt-5 rounded-md border border-gray-200 bg-gray-50 p-4">
+            <h3 class="font-semibold text-gray-900 mb-2">Supported HSD backend styles</h3>
+            <ul class="list-disc pl-6 space-y-2 text-gray-700">
+                <li><code class="rounded bg-gray-100 px-1">raw</code>: direct HSD HTTP API, for example <code class="rounded bg-gray-100 px-1">/coin/&lt;txHash&gt;/&lt;index&gt;</code>.</li>
+                <li><code class="rounded bg-gray-100 px-1">firehsd</code>: Fire HSD wrapper API, for example <code class="rounded bg-gray-100 px-1">/api/v1/coin/&lt;txHash&gt;/&lt;index&gt;</code>.</li>
+            </ul>
+        </div>
     </section>
 </div>
 {% endblock %}
