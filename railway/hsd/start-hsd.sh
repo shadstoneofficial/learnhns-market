@@ -8,7 +8,7 @@ fi
 
 mkdir -p "${HSD_PREFIX}"
 
-exec hsd \
+exec node /opt/hsd/bin/hsd \
   --network="${HSD_NETWORK}" \
   --prefix="${HSD_PREFIX}" \
   --http-host="${HSD_HTTP_HOST}" \
