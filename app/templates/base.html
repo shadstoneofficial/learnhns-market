@@ -3,14 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Handshake Marketplace</title>
+    <title>LearnHNS Market</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans antialiased flex flex-col min-h-screen">
     <header class="bg-white shadow-sm border-b border-gray-200">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-            <a href="{{ url_for('main.index') }}" class="text-xl font-bold text-indigo-600">HNS Market</a>
+            <a href="{{ url_for('main.index') }}" class="flex items-center gap-3 text-xl font-bold text-indigo-600">
+                <img src="{{ url_for('static', filename='Handshake-monogram-black.png') }}" alt="" class="h-8 w-8 object-contain">
+                <span>LearnHNS Market</span>
+            </a>
             <nav class="flex items-center gap-5">
                 <a href="{{ url_for('main.index') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Browse</a>
                 <a href="{{ url_for('main.upload') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Upload</a>
@@ -23,7 +30,7 @@
     </main>
 
     <footer class="bg-white mt-12 py-6 border-t border-gray-200 text-center text-gray-500 text-sm">
-        <p>&copy; 2026 Handshake Marketplace Revival.</p>
+        <p>&copy; 2026 LearnHNS Market.</p>
     </footer>
 </body>
 </html>

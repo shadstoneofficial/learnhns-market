@@ -29,6 +29,12 @@ class Config:
     # Rate is expressed in basis points: 250 = 2.5%, 100 = 1%.
     MARKETPLACE_FEE_RATE = int(os.getenv('MARKETPLACE_FEE_RATE', '0'))
     MARKETPLACE_FEE_ADDRESS = os.getenv('MARKETPLACE_FEE_ADDRESS')
+
+    # Optional full/indexed hsd node used to serve chain data to SPV clients.
+    # Example: HSD_HTTP_URL=http://127.0.0.1:12037 HSD_API_KEY=hunter2
+    HSD_HTTP_URL = os.getenv('HSD_HTTP_URL')
+    HSD_API_KEY = os.getenv('HSD_API_KEY')
+    HSD_HTTP_TIMEOUT = float(os.getenv('HSD_HTTP_TIMEOUT', '5'))
     
     # Domain configuration
     # SERVER_NAME = os.getenv('SERVER_NAME', 'market.learnhns.com')

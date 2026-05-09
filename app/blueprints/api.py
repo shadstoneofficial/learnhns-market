@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+import requests
 from sqlalchemy.exc import IntegrityError
 from app.models import db, Listing
 from app.utils import (
@@ -12,6 +13,7 @@ from app.utils import (
 )
 import os
 import json
+from urllib.parse import urljoin
 
 api_bp = Blueprint('api', __name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day"])
@@ -36,6 +38,51 @@ def _bob_auction_from_listing(listing):
         "expiresAt": listing.expires_at.isoformat() if listing.expires_at else None,
         "url": f"/listing/{listing.name}",
     }
+
+
+def _listing_is_available(listing):
+    return listing and listing.status == 'active' and not listing.is_expired()
+
+
+def _fetch_hsd_coin(tx_hash, output_index):
+    hsd_url = current_app.config.get('HSD_HTTP_URL')
+    api_key = current_app.config.get('HSD_API_KEY')
+
+    if not hsd_url:
+        return None, ("HSD HTTP URL is not configured", 503)
+
+    endpoint = f"/coin/{tx_hash}/{output_index}"
+    url = urljoin(hsd_url.rstrip('/') + '/', endpoint.lstrip('/'))
+    auth = ('x', api_key) if api_key else None
+
+    try:
+        response = requests.get(
+            url,
+            auth=auth,
+            timeout=current_app.config.get('HSD_HTTP_TIMEOUT', 5),
+        )
+    except requests.RequestException as exc:
+        current_app.logger.warning("Failed to fetch hsd coin %s:%s: %s", tx_hash, output_index, exc)
+        return None, ("Could not reach HSD node", 503)
+
+    if response.status_code == 404:
+        return None, ("Listing coin was not found or is already spent", 404)
+    if response.status_code == 401:
+        return None, ("HSD API key is invalid", 503)
+    if response.status_code >= 400:
+        current_app.logger.warning(
+            "HSD coin lookup failed for %s:%s with status %s: %s",
+            tx_hash,
+            output_index,
+            response.status_code,
+            response.text[:500],
+        )
+        return None, ("HSD coin lookup failed", 503)
+
+    try:
+        return response.json(), None
+    except ValueError:
+        return None, ("HSD returned invalid JSON", 503)
 
 
 @api_bp.route('/v1/fee_info', methods=['GET'])
@@ -75,6 +122,29 @@ def auctions():
     return jsonify({
         "total": total,
         "auctions": [_bob_auction_from_listing(listing) for listing in page_listings],
+    })
+
+
+@api_bp.route('/v2/listings/<name>/coin', methods=['GET'])
+def listing_coin(name):
+    listing = Listing.query.filter_by(name=name).first()
+    if not _listing_is_available(listing):
+        return jsonify({"error": "Listing not found"}), 404
+
+    proof = listing.proof_json
+    tx_hash = proof["lockingTxHash"]
+    output_index = proof["lockingOutputIdx"]
+    coin, error = _fetch_hsd_coin(tx_hash, output_index)
+
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+
+    return jsonify({
+        "name": listing.name,
+        "lockingTxHash": tx_hash,
+        "lockingOutputIdx": output_index,
+        "coin": coin,
     })
 
 @api_bp.route('/upload-proof', methods=['POST'])
