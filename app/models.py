@@ -54,3 +54,29 @@ class PendingListing(db.Model):
 
     def is_expired(self):
         return self.expires_at and self.expires_at < datetime.utcnow()
+
+
+class ExpiringNameWatch(db.Model):
+    __tablename__ = 'expiring_name_watches'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    network = db.Column(db.String(20), default='main', nullable=False, index=True)
+    source = db.Column(db.String(40), default='market-observed', nullable=False, index=True)
+    state = db.Column(db.String(40), nullable=True, index=True)
+    renewal_height = db.Column(db.Integer, nullable=True)
+    expiration_height = db.Column(db.Integer, nullable=True, index=True)
+    blocks_until_expire = db.Column(db.Integer, nullable=True, index=True)
+    days_until_expire = db.Column(db.Numeric(12, 4), nullable=True)
+    hours_until_expire = db.Column(db.Numeric(12, 4), nullable=True)
+    expired = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    found = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    error = db.Column(db.Text, nullable=True)
+    source_height = db.Column(db.Integer, nullable=True, index=True)
+    last_checked_at = db.Column(db.DateTime, nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('name', 'network', name='uq_expiring_name_watches_name_network'),
+    )

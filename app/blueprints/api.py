@@ -3,7 +3,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import requests
 from sqlalchemy.exc import IntegrityError
-from app.models import db, Listing, PendingListing
+from app.models import db, ExpiringNameWatch, Listing, PendingListing
 from app.utils import (
     fixed_price_listing_fields,
     validate_shakedex_proof,
@@ -549,6 +549,59 @@ def _expiring_name_payload(name, chain_height=None):
     }
 
 
+def _seed_expiring_watches(names, source='market-observed', network='main'):
+    created = 0
+    for name in names:
+        existing = ExpiringNameWatch.query.filter_by(name=name, network=network).first()
+        if existing:
+            continue
+        db.session.add(ExpiringNameWatch(name=name, network=network, source=source))
+        created += 1
+
+    if created:
+        db.session.commit()
+
+
+def _store_expiring_watch(payload, chain_height=None, network='main', source='market-observed'):
+    watch = ExpiringNameWatch.query.filter_by(name=payload['name'], network=network).first()
+    if watch is None:
+        watch = ExpiringNameWatch(name=payload['name'], network=network, source=source)
+
+    watch.source = source
+    watch.state = payload.get('state')
+    watch.renewal_height = payload.get('renewalHeight')
+    watch.expiration_height = payload.get('expirationHeight')
+    watch.blocks_until_expire = payload.get('blocksUntilExpire')
+    watch.days_until_expire = payload.get('daysUntilExpire')
+    watch.hours_until_expire = payload.get('hoursUntilExpire')
+    watch.expired = bool(payload.get('expired'))
+    watch.found = bool(payload.get('found'))
+    watch.error = payload.get('error')
+    watch.source_height = chain_height
+    watch.last_checked_at = datetime.utcnow()
+    watch.updated_at = datetime.utcnow()
+    db.session.add(watch)
+    return watch
+
+
+def _expiring_watch_payload(watch):
+    return {
+        "name": watch.name,
+        "found": watch.found,
+        "state": watch.state,
+        "renewalHeight": watch.renewal_height,
+        "expirationHeight": watch.expiration_height,
+        "blocksUntilExpire": watch.blocks_until_expire,
+        "daysUntilExpire": float(watch.days_until_expire) if watch.days_until_expire is not None else None,
+        "hoursUntilExpire": float(watch.hours_until_expire) if watch.hours_until_expire is not None else None,
+        "expired": watch.expired,
+        "error": watch.error,
+        "source": watch.source,
+        "sourceHeight": watch.source_height,
+        "lastCheckedAt": watch.last_checked_at.isoformat() if watch.last_checked_at else None,
+    }
+
+
 @api_bp.route('/v1/fee_info', methods=['GET'])
 @api_bp.route('/v2/fee_info', methods=['GET'])
 def fee_info():
@@ -884,11 +937,22 @@ def expiring_names():
     else:
         names = _observed_market_names(limit)
         scope = 'channel-observed'
+        _seed_expiring_watches(names)
 
     chain_payload, chain_status = get_hsd_status_payload()
     chain = chain_payload.get('chain', {}) if chain_status == 200 else {}
     chain_height = chain_payload.get('height') if chain_status == 200 else None
-    rows = [_expiring_name_payload(name, chain_height) for name in names]
+    rows = []
+    for name in names:
+        payload = _expiring_name_payload(name, chain_height)
+        watch = _store_expiring_watch(
+            payload,
+            chain_height=chain_height,
+            source='requested' if scope == 'requested' else 'market-observed',
+        )
+        rows.append(_expiring_watch_payload(watch))
+
+    db.session.commit()
 
     rows.sort(key=lambda row: (
         row.get('blocksUntilExpire') is None,
