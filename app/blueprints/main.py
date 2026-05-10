@@ -28,6 +28,17 @@ def index():
         hsd_readiness=_hsd_readiness(),
     )
 
+@main_bp.route('/sold')
+def sold():
+    sold_statuses = ('sold', 'completed', 'archived')
+    listings = (
+        Listing.query
+        .filter(Listing.status.in_(sold_statuses))
+        .order_by(Listing.created_at.desc())
+        .all()
+    )
+    return render_template('sold.html', listings=listings)
+
 @main_bp.route('/upload')
 def upload():
     return render_template('upload.html')

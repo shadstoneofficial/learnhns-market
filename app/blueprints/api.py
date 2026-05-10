@@ -423,6 +423,33 @@ def auctions():
     })
 
 
+@api_bp.route('/v2/sales', methods=['GET'])
+def sales():
+    sold_statuses = ('sold', 'completed', 'archived')
+    listings = (
+        Listing.query
+        .filter(Listing.status.in_(sold_statuses))
+        .order_by(Listing.created_at.desc())
+        .all()
+    )
+
+    return jsonify({
+        "total": len(listings),
+        "sales": [
+            {
+                "id": listing.id,
+                "name": listing.name,
+                "priceHns": float(listing.price_hns),
+                "status": listing.status,
+                "createdAt": listing.created_at.isoformat() if listing.created_at else None,
+                "expiresAt": listing.expires_at.isoformat() if listing.expires_at else None,
+                "url": f"/listing/{listing.name}",
+            }
+            for listing in listings
+        ],
+    })
+
+
 @api_bp.route('/v2/pending-listings', methods=['GET'])
 def pending_listings():
     pending = [

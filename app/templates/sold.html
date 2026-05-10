@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-8 text-center sm:text-left">
+    <h1 class="text-3xl font-bold mb-2">Sold Listings</h1>
+    <p class="text-gray-600">Completed and archived Shakedex channel sales will appear here.</p>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+    <div class="grid grid-cols-4 gap-4 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <div>Name</div>
+        <div>Price</div>
+        <div>Status</div>
+        <div>Date</div>
+    </div>
+    {% for listing in listings %}
+    <div class="grid grid-cols-4 gap-4 px-5 py-4 border-t border-gray-100">
+        <div class="font-semibold text-indigo-700 truncate">{{ listing.name }}</div>
+        <div>{{ listing.price_hns }} HNS</div>
+        <div class="capitalize">{{ listing.status }}</div>
+        <div class="text-gray-500">{{ listing.created_at.strftime('%Y-%m-%d') if listing.created_at else 'Unknown' }}</div>
+    </div>
+    {% else %}
+    <div class="px-5 py-14 text-center text-gray-500">
+        <p class="text-lg font-medium mb-2">No sold listings yet.</p>
+        <p class="text-sm">Once the first Shakedex sales are recorded, this page becomes the public market history.</p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
