@@ -71,13 +71,7 @@ def _pending_listing_status(pending):
             if chain_status == 200:
                 indexers = ((chain_payload.get('chain') or {}).get('indexers') or {})
             if indexers.get('indexTX') is False:
-                return {
-                    "status": "pending-submitted",
-                    "pendingReason": "Pending record received; this channel is not transaction-indexed, so finalization must be checked by name/proof upload.",
-                    "blocksUntilFinalize": None,
-                    "chainHeight": chain_payload.get('height') if chain_status == 200 else None,
-                    "transferHeight": None,
-                }
+                return _pending_status_from_name_info(pending, chain_payload, chain_status)
             return {
                 "status": "pending-submitted",
                 "pendingReason": "Waiting for transfer transaction to appear",
@@ -134,6 +128,68 @@ def _pending_listing_status(pending):
     }
 
 
+def _pending_status_from_name_info(pending, chain_payload=None, chain_status=None):
+    name_info, name_error = _fetch_hsd_name_info(pending.name)
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+
+    if name_error:
+        return {
+            "status": "pending-submitted",
+            "pendingReason": "Pending record received; this channel is not transaction-indexed, and name-state lookup is not available yet.",
+            "blocksUntilFinalize": None,
+            "chainHeight": chain_height,
+            "transferHeight": None,
+            "nameState": None,
+        }
+
+    info = name_info.get('info') if isinstance(name_info, dict) else None
+    if not isinstance(info, dict):
+        return {
+            "status": "pending-submitted",
+            "pendingReason": "Pending record received; no active on-chain name state is visible yet.",
+            "blocksUntilFinalize": None,
+            "chainHeight": chain_height,
+            "transferHeight": None,
+            "nameState": None,
+        }
+
+    stats = info.get('stats') if isinstance(info.get('stats'), dict) else {}
+    transfer_height = info.get('transfer')
+    if not isinstance(transfer_height, int) or transfer_height <= 0:
+        return {
+            "status": "pending-submitted",
+            "pendingReason": "Pending record received; no active transfer lockup is visible for this name yet.",
+            "blocksUntilFinalize": None,
+            "chainHeight": chain_height,
+            "transferHeight": None,
+            "nameState": info.get('state'),
+        }
+
+    blocks_until_finalize = stats.get('blocksUntilValidFinalize')
+    if not isinstance(blocks_until_finalize, int) and isinstance(chain_height, int):
+        blocks_since_transfer = max(chain_height - transfer_height, 0)
+        blocks_until_finalize = max(SHAKEDEX_TRANSFER_LOCKUP - blocks_since_transfer, 0)
+
+    if isinstance(blocks_until_finalize, int) and blocks_until_finalize <= 0:
+        return {
+            "status": "ready-to-finalize",
+            "pendingReason": "Transfer lockup is complete; seller can finalize the Shakedex lock and upload the proof.",
+            "blocksUntilFinalize": 0,
+            "chainHeight": chain_height,
+            "transferHeight": transfer_height,
+            "nameState": info.get('state'),
+        }
+
+    return {
+        "status": "transfer-lockup",
+        "pendingReason": "Transfer detected; waiting for Shakedex lockup before seller finalizes the proof.",
+        "blocksUntilFinalize": blocks_until_finalize,
+        "chainHeight": chain_height,
+        "transferHeight": transfer_height,
+        "nameState": info.get('state'),
+    }
+
+
 def _pending_listing_payload(pending, refresh=True):
     status_info = _pending_listing_status(pending) if refresh else {
         "status": pending.status,
@@ -141,6 +197,7 @@ def _pending_listing_payload(pending, refresh=True):
         "blocksUntilFinalize": None,
         "chainHeight": None,
         "transferHeight": None,
+        "nameState": None,
     }
 
     return {
@@ -159,6 +216,7 @@ def _pending_listing_payload(pending, refresh=True):
         "blocksUntilFinalize": status_info["blocksUntilFinalize"],
         "chainHeight": status_info["chainHeight"],
         "transferHeight": status_info["transferHeight"],
+        "nameState": status_info.get("nameState"),
         "sellerNote": pending.seller_note,
         "createdAt": pending.created_at.isoformat() if pending.created_at else None,
         "updatedAt": pending.updated_at.isoformat() if pending.updated_at else None,
@@ -240,6 +298,60 @@ def _hsd_request(endpoint, method='GET', payload=None):
         return None, ("HSD returned invalid JSON", 503, response.text[:500])
 
 
+def _hsd_rpc_request(method, params=None):
+    if _hsd_api_style() == 'firehsd':
+        return None, ("HSD RPC is not available for Fire HSD endpoints", 503, None)
+
+    hsd_url = current_app.config.get('HSD_HTTP_URL')
+    api_key = current_app.config.get('HSD_API_KEY')
+
+    if not hsd_url:
+        return None, ("HSD HTTP URL is not configured", 503, None)
+
+    url = hsd_url.rstrip('/') + '/'
+    auth = ('x', api_key) if api_key else None
+    body = {
+        "jsonrpc": "2.0",
+        "id": "learnhns-market",
+        "method": method,
+        "params": params or [],
+    }
+
+    try:
+        response = requests.post(
+            url,
+            auth=auth,
+            json=body,
+            timeout=current_app.config.get('HSD_HTTP_TIMEOUT', 5),
+        )
+    except requests.RequestException as exc:
+        current_app.logger.warning("Failed HSD RPC %s: %s", method, exc)
+        return None, ("Could not reach HSD node", 503, str(exc))
+
+    if response.status_code == 401:
+        return None, ("HSD API key is invalid", 503, response.text[:500])
+    if response.status_code >= 400:
+        current_app.logger.warning(
+            "HSD RPC failed for %s with status %s: %s",
+            method,
+            response.status_code,
+            response.text[:500],
+        )
+        return None, ("HSD RPC request failed", 503, response.text[:500])
+
+    try:
+        data = response.json()
+    except ValueError:
+        return None, ("HSD returned invalid JSON", 503, response.text[:500])
+
+    if isinstance(data, dict) and data.get('error'):
+        error = data.get('error') or {}
+        message = error.get('message') or "HSD RPC returned an error"
+        return None, (message, 404 if "not found" in message.lower() else 503, error)
+
+    return data.get('result') if isinstance(data, dict) else data, None
+
+
 def _fetch_hsd_coin(tx_hash, output_index):
     coin, error = _hsd_request(f"/coin/{tx_hash}/{output_index}")
     if error and error[1] == 404:
@@ -252,6 +364,13 @@ def _fetch_hsd_tx(tx_hash):
     if error and error[1] == 404:
         return None, ("Transaction was not found", 404, error[2])
     return tx, error
+
+
+def _fetch_hsd_name_info(name):
+    info, error = _hsd_rpc_request('getnameinfo', [name, True])
+    if error and error[1] == 404:
+        return None, ("Name was not found", 404, error[2])
+    return info, error
 
 
 @api_bp.route('/v1/fee_info', methods=['GET'])
@@ -488,6 +607,21 @@ def tx_status(tx_hash):
         "chainHeight": chain_height,
         "tx": tx,
     })
+
+
+@api_bp.route('/v2/names/<name>/status', methods=['GET'])
+def name_status(name):
+    info, error = _fetch_hsd_name_info(name)
+    if error:
+        message, status = error[:2]
+        return jsonify({"error": message}), status
+
+    return jsonify({
+        "name": name,
+        "found": bool(isinstance(info, dict) and info.get('info')),
+        "nameInfo": info,
+    })
+
 
 @api_bp.route('/upload-proof', methods=['POST'])
 @limiter.limit("10 per hour")  # per IP
