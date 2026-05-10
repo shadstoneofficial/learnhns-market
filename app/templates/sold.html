@@ -2,8 +2,8 @@
 
 {% block content %}
 <div class="mb-8 text-center sm:text-left">
-    <h1 class="text-3xl font-bold mb-2">Sold Listings</h1>
-    <p class="text-gray-600">Completed and archived Shakedex channel sales will appear here.</p>
+    <h1 class="text-3xl font-bold mb-2">Market History</h1>
+    <p class="text-gray-600">Completed sales, archived listings, and seller cancellations appear here.</p>
 </div>
 
 <div class="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
@@ -18,12 +18,22 @@
         <a href="{{ url_for('main.listing_detail', name=listing.name) }}" class="font-semibold text-indigo-700 truncate hover:underline">{{ listing.name }}</a>
         <div>{{ listing.price_hns }} HNS</div>
         <div class="capitalize">{{ listing.status }}</div>
-        <div class="text-gray-500">{{ listing.sold_at.strftime('%Y-%m-%d') if listing.sold_at else listing.created_at.strftime('%Y-%m-%d') if listing.created_at else 'Unknown' }}</div>
+        <div class="text-gray-500">
+            {% if listing.sold_at %}
+                {{ listing.sold_at.strftime('%Y-%m-%d') }}
+            {% elif listing.cancelled_at %}
+                {{ listing.cancelled_at.strftime('%Y-%m-%d') }}
+            {% elif listing.created_at %}
+                {{ listing.created_at.strftime('%Y-%m-%d') }}
+            {% else %}
+                Unknown
+            {% endif %}
+        </div>
     </div>
     {% else %}
     <div class="px-5 py-14 text-center text-gray-500">
-        <p class="text-lg font-medium mb-2">No sold listings yet.</p>
-        <p class="text-sm">Once the first Shakedex sales are recorded, this page becomes the public market history.</p>
+        <p class="text-lg font-medium mb-2">No market history yet.</p>
+        <p class="text-sm">Once Shakedex sales or cancellations are recorded, this page becomes the public market history.</p>
     </div>
     {% endfor %}
 </div>

@@ -30,10 +30,10 @@ def index():
 
 @main_bp.route('/sold')
 def sold():
-    sold_statuses = ('sold', 'completed', 'archived')
+    historical_statuses = ('sold', 'completed', 'archived', 'cancelled')
     listings = (
         Listing.query
-        .filter(Listing.status.in_(sold_statuses))
+        .filter(Listing.status.in_(historical_statuses))
         .order_by(Listing.created_at.desc())
         .all()
     )
