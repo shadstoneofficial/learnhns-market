@@ -1,7 +1,7 @@
 import json
 from urllib.parse import quote
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 from app.blueprints.api import get_hsd_status_payload
 from app.blueprints.api import _pending_listing_payload
 from app.models import Listing, PendingListing
@@ -63,16 +63,49 @@ def status():
 
 @main_bp.route('/listing/<name>')
 def listing_detail(name):
-    listing = Listing.query.filter_by(name=name, status='active').first_or_404()
-    proof_json = json.dumps(listing.proof_json, separators=(',', ':'))
-    bob_deep_link = (
-        f"bob://x/fulfillauction?name={quote(listing.name, safe='')}"
-        f"&presign={quote(proof_json, safe='')}"
+    normalized_name = name.lower().rstrip('/')
+    sale_history = _sale_history(normalized_name)
+    listing = (
+        Listing.query
+        .filter_by(name=normalized_name, status='active')
+        .order_by(Listing.created_at.desc())
+        .first()
     )
+    if not listing:
+        pending = (
+            PendingListing.query
+            .filter_by(name=normalized_name)
+            .order_by(PendingListing.created_at.desc())
+            .first()
+        )
+        if pending and pending.status not in {'active', 'cancelled', 'expired', 'failed'} and not pending.is_expired():
+            return render_template(
+                'pending.html',
+                pending=_pending_listing_payload(pending),
+                sale_history=sale_history,
+                hsd_readiness=_hsd_readiness(),
+            )
+
+        listing = (
+            Listing.query
+            .filter_by(name=normalized_name)
+            .order_by(Listing.created_at.desc())
+            .first_or_404()
+        )
+
+    bob_deep_link = None
+    if listing.status == 'active' and not listing.is_expired():
+        proof_json = json.dumps(listing.proof_json, separators=(',', ':'))
+        bob_deep_link = (
+            f"bob://x/fulfillauction?name={quote(listing.name, safe='')}"
+            f"&presign={quote(proof_json, safe='')}"
+        )
+
     return render_template(
         'listing.html',
         listing=listing,
         bob_deep_link=bob_deep_link,
+        sale_history=sale_history,
         hsd_readiness=_hsd_readiness(),
     )
 
@@ -84,11 +117,16 @@ def listing_proof(name):
 
 @main_bp.route('/pending/<name>')
 def pending_detail(name):
-    pending = PendingListing.query.filter_by(name=name).first_or_404()
-    return render_template(
-        'pending.html',
-        pending=_pending_listing_payload(pending),
-        hsd_readiness=_hsd_readiness(),
+    return redirect(url_for('main.listing_detail', name=name), code=301)
+
+
+def _sale_history(name):
+    sold_statuses = ('sold', 'completed', 'archived')
+    return (
+        Listing.query
+        .filter(Listing.name == name, Listing.status.in_(sold_statuses))
+        .order_by(Listing.created_at.desc())
+        .all()
     )
 
 

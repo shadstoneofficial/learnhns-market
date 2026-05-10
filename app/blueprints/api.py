@@ -220,7 +220,7 @@ def _pending_listing_payload(pending, refresh=True):
         "sellerNote": pending.seller_note,
         "createdAt": pending.created_at.isoformat() if pending.created_at else None,
         "updatedAt": pending.updated_at.isoformat() if pending.updated_at else None,
-        "url": f"/pending/{pending.name}",
+        "url": f"/listing/{pending.name}",
     }
 
 
@@ -232,7 +232,7 @@ def _bob_auction_from_pending(pending):
         "data": [],
         "version": 2,
         "description": payload["pendingReason"],
-        "url": f"/pending/{pending.name}",
+        "url": f"/listing/{pending.name}",
     }
 
 
@@ -686,6 +686,10 @@ def upload_proof():
     os.remove(temp_path)
     
     listing_fields = fixed_price_listing_fields(proof_data)
+    existing_active = Listing.query.filter_by(name=listing_fields['name'], status='active').first()
+    if existing_active and not existing_active.is_expired():
+        return jsonify({"error": f"An active listing for {listing_fields['name']} already exists"}), 409
+
     listing = Listing(
         name=listing_fields['name'],
         price_hns=listing_fields['price_hns'],

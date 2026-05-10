@@ -7,7 +7,11 @@
     </div>
     
     <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">{{ listing.name }}</h1>
-    <div class="text-3xl text-indigo-600 font-bold mb-6">{{ listing.price_hns }} <span class="text-xl text-gray-500 font-medium">HNS</span></div>
+    {% if listing.status == 'active' and not listing.is_expired() %}
+        <div class="text-3xl text-indigo-600 font-bold mb-6">{{ listing.price_hns }} <span class="text-xl text-gray-500 font-medium">HNS</span></div>
+    {% else %}
+        <div class="mb-6 inline-flex rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-gray-700">{{ listing.status }}</div>
+    {% endif %}
     
     <div class="mb-8 prose text-gray-700">
         {% if listing.description %}
@@ -18,10 +22,13 @@
     </div>
     
     <div class="bg-gray-50 p-5 rounded-lg mb-8 text-sm text-gray-600 border border-gray-200 shadow-inner">
+        <p class="mb-2"><strong class="text-gray-800">Status:</strong> {{ listing.status }}</p>
+        <p class="mb-2"><strong class="text-gray-800">Price:</strong> {{ listing.price_hns }} HNS</p>
         <p class="mb-2"><strong class="text-gray-800">Seller HNS Address:</strong> <span class="font-mono">{{ listing.seller_hns_address }}</span></p>
         <p><strong class="text-gray-800">Listed On:</strong> {{ listing.created_at.strftime('%Y-%m-%d') }}</p>
     </div>
     
+    {% if bob_deep_link %}
     <div class="text-center mt-10">
         {% if hsd_readiness and not hsd_readiness.ready %}
         <div class="mb-5 rounded-md border {% if hsd_readiness.reachable %}border-amber-200 bg-amber-50 text-amber-900{% else %}border-red-200 bg-red-50 text-red-900{% endif %} p-4 text-left">
@@ -43,5 +50,27 @@
         </div>
         <p class="text-sm text-gray-500 mt-3">Opens Bob Wallet directly. If the app does not open, download the proof JSON and load it in Bob Wallet.</p>
     </div>
+    {% else %}
+    <div class="mt-8 rounded-md border border-gray-200 bg-gray-50 p-4 text-gray-700">
+        <p class="font-semibold">This listing is not currently buyable.</p>
+        <p class="text-sm mt-1">This page remains available as the public history page for {{ listing.name }}.</p>
+    </div>
+    {% endif %}
+
+    {% if sale_history %}
+    <div class="mt-10 border-t border-gray-200 pt-8">
+        <h2 class="text-2xl font-bold mb-4 text-gray-900">Sale History</h2>
+        <div class="space-y-3">
+            {% for sale in sale_history %}
+            <div class="rounded-md border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
+                <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <span><strong>{{ sale.price_hns }} HNS</strong> · {{ sale.status }}</span>
+                    <span class="text-gray-500">{{ sale.created_at.strftime('%Y-%m-%d') if sale.created_at else 'Unknown date' }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

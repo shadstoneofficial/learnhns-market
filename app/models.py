@@ -7,7 +7,7 @@ class Listing(db.Model):
     __tablename__ = 'listings'
     
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
     price_hns = db.Column(db.Numeric(12, 6), nullable=False)
     description = db.Column(db.Text)
     

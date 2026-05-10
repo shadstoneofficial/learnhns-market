@@ -40,7 +40,7 @@
                 {{ pending.blocksUntilFinalize }} blocks remaining.
             {% endif %}
         </p>
-        <a href="{{ url_for('main.pending_detail', name=pending.name) }}" class="inline-block bg-amber-50 text-amber-800 px-4 py-2 rounded font-medium hover:bg-amber-100 transition">
+        <a href="{{ url_for('main.listing_detail', name=pending.name) }}" class="inline-block bg-amber-50 text-amber-800 px-4 py-2 rounded font-medium hover:bg-amber-100 transition">
             View Pending
         </a>
     </div>
