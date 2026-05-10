@@ -13,7 +13,7 @@ from app.utils import (
 )
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urljoin
 
 api_bp = Blueprint('api', __name__)
@@ -517,6 +517,22 @@ def _observed_market_names(limit):
     return names
 
 
+def _require_market_admin():
+    token = current_app.config.get('MARKET_ADMIN_TOKEN')
+    if not token:
+        return None
+
+    submitted = (
+        request.headers.get('X-Market-Admin-Token')
+        or request.args.get('adminToken')
+        or (request.get_json(silent=True) or {}).get('adminToken')
+    )
+    if submitted != token:
+        return jsonify({"error": "Admin token is required"}), 401
+
+    return None
+
+
 def _expiring_name_payload(name, chain_height=None):
     info, error = _fetch_hsd_name_info(name)
     if error:
@@ -561,6 +577,8 @@ def _seed_expiring_watches(names, source='market-observed', network='main'):
     if created:
         db.session.commit()
 
+    return created
+
 
 def _store_expiring_watch(payload, chain_height=None, network='main', source='market-observed'):
     watch = ExpiringNameWatch.query.filter_by(name=payload['name'], network=network).first()
@@ -599,6 +617,75 @@ def _expiring_watch_payload(watch):
         "source": watch.source,
         "sourceHeight": watch.source_height,
         "lastCheckedAt": watch.last_checked_at.isoformat() if watch.last_checked_at else None,
+    }
+
+
+def _cached_expiring_watches(limit, network='main'):
+    rows = (
+        ExpiringNameWatch.query
+        .filter_by(network=network)
+        .order_by(
+            ExpiringNameWatch.blocks_until_expire.is_(None),
+            ExpiringNameWatch.blocks_until_expire.asc(),
+            ExpiringNameWatch.name.asc(),
+        )
+        .limit(limit)
+        .all()
+    )
+    return [_expiring_watch_payload(row) for row in rows]
+
+
+def _refresh_expiring_watches(limit=100, stale_only=True, network='main'):
+    _seed_expiring_watches(_observed_market_names(limit), network=network)
+
+    refresh_minutes = current_app.config.get('EXPIRING_WATCH_REFRESH_MINUTES', 60)
+    cutoff = datetime.utcnow() - timedelta(minutes=refresh_minutes)
+    query = ExpiringNameWatch.query.filter_by(network=network)
+    if stale_only:
+        query = query.filter(
+            (ExpiringNameWatch.last_checked_at.is_(None))
+            | (ExpiringNameWatch.last_checked_at < cutoff)
+        )
+
+    watches = (
+        query
+        .order_by(
+            ExpiringNameWatch.last_checked_at.isnot(None),
+            ExpiringNameWatch.blocks_until_expire.is_(None),
+            ExpiringNameWatch.blocks_until_expire.asc(),
+            ExpiringNameWatch.name.asc(),
+        )
+        .limit(limit)
+        .all()
+    )
+
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain = chain_payload.get('chain', {}) if chain_status == 200 else {}
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+
+    refreshed = []
+    for watch in watches:
+        payload = _expiring_name_payload(watch.name, chain_height)
+        refreshed_watch = _store_expiring_watch(
+            payload,
+            chain_height=chain_height,
+            network=network,
+            source=watch.source or 'market-observed',
+        )
+        refreshed.append(_expiring_watch_payload(refreshed_watch))
+
+    if refreshed:
+        db.session.commit()
+
+    return {
+        "refreshed": len(refreshed),
+        "names": refreshed,
+        "node": {
+            "reachable": chain_payload.get('reachable', False),
+            "height": chain_height,
+            "progress": chain_payload.get('progress'),
+            "spv": ((chain.get('options') or {}).get('spv') if isinstance(chain, dict) else None),
+        },
     }
 
 
@@ -922,6 +1009,7 @@ def expiring_names():
         return jsonify({"error": "limit must be an integer"}), 400
 
     raw_names = request.args.get('names', '')
+    refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes'}
     if raw_names:
         names = []
         seen = set()
@@ -943,16 +1031,20 @@ def expiring_names():
     chain = chain_payload.get('chain', {}) if chain_status == 200 else {}
     chain_height = chain_payload.get('height') if chain_status == 200 else None
     rows = []
-    for name in names:
-        payload = _expiring_name_payload(name, chain_height)
-        watch = _store_expiring_watch(
-            payload,
-            chain_height=chain_height,
-            source='requested' if scope == 'requested' else 'market-observed',
-        )
-        rows.append(_expiring_watch_payload(watch))
 
-    db.session.commit()
+    if scope == 'requested' or refresh:
+        for name in names:
+            payload = _expiring_name_payload(name, chain_height)
+            watch = _store_expiring_watch(
+                payload,
+                chain_height=chain_height,
+                source='requested' if scope == 'requested' else 'market-observed',
+            )
+            rows.append(_expiring_watch_payload(watch))
+
+        db.session.commit()
+    else:
+        rows = _cached_expiring_watches(limit)
 
     rows.sort(key=lambda row: (
         row.get('blocksUntilExpire') is None,
@@ -973,6 +1065,30 @@ def expiring_names():
         "total": len(rows),
         "names": rows,
     })
+
+
+@api_bp.route('/v2/expiring-names/refresh', methods=['POST'])
+@limiter.limit("20 per hour")
+def refresh_expiring_names():
+    auth_error = _require_market_admin()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json(silent=True) or {}
+    try:
+        limit = min(max(int(data.get('limit', request.args.get('limit', 100))), 1), 500)
+    except ValueError:
+        return jsonify({"error": "limit must be an integer"}), 400
+
+    stale_only = str(data.get('staleOnly', request.args.get('staleOnly', 'true'))).lower() not in {'0', 'false', 'no'}
+    result = _refresh_expiring_watches(limit=limit, stale_only=stale_only)
+    result.update({
+        "success": True,
+        "scope": "channel-observed",
+        "global": False,
+        "globalReason": "This refreshes the channel-observed expiring-name index. Broad global discovery still needs a full name-state indexer.",
+    })
+    return jsonify(result)
 
 
 @api_bp.route('/upload-proof', methods=['POST'])
