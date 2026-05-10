@@ -497,6 +497,58 @@ def _fetch_hsd_name_info(name):
     return info, error
 
 
+def _observed_market_names(limit):
+    names = []
+    seen = set()
+    rows = [
+        *Listing.query.order_by(Listing.created_at.desc()).all(),
+        *PendingListing.query.order_by(PendingListing.created_at.desc()).all(),
+    ]
+
+    for row in rows:
+        name = getattr(row, 'name', None)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+        if len(names) >= limit:
+            break
+
+    return names
+
+
+def _expiring_name_payload(name, chain_height=None):
+    info, error = _fetch_hsd_name_info(name)
+    if error:
+        message, status = error[:2]
+        return {
+            "name": name,
+            "found": False,
+            "error": message,
+            "statusCode": status,
+        }
+
+    name_info = info.get('info') if isinstance(info, dict) else {}
+    stats = name_info.get('stats') if isinstance(name_info, dict) and isinstance(name_info.get('stats'), dict) else {}
+    blocks_until_expire = stats.get('blocksUntilExpire')
+    expiration_height = None
+    if isinstance(chain_height, int) and isinstance(blocks_until_expire, int):
+        expiration_height = chain_height + blocks_until_expire
+
+    return {
+        "name": name,
+        "found": bool(name_info),
+        "state": name_info.get('state') if isinstance(name_info, dict) else None,
+        "renewalHeight": name_info.get('renewal') if isinstance(name_info, dict) else None,
+        "expirationHeight": expiration_height,
+        "blocksUntilExpire": blocks_until_expire,
+        "daysUntilExpire": stats.get('daysUntilExpire'),
+        "hoursUntilExpire": stats.get('hoursUntilExpire'),
+        "expired": isinstance(blocks_until_expire, int) and blocks_until_expire <= 0,
+        "stats": stats,
+    }
+
+
 @api_bp.route('/v1/fee_info', methods=['GET'])
 @api_bp.route('/v2/fee_info', methods=['GET'])
 def fee_info():
@@ -806,6 +858,56 @@ def name_status(name):
         "name": name,
         "found": bool(isinstance(info, dict) and info.get('info')),
         "nameInfo": info,
+    })
+
+
+@api_bp.route('/v2/expiring-names', methods=['GET'])
+def expiring_names():
+    try:
+        limit = min(max(int(request.args.get('limit', 100)), 1), 500)
+    except ValueError:
+        return jsonify({"error": "limit must be an integer"}), 400
+
+    raw_names = request.args.get('names', '')
+    if raw_names:
+        names = []
+        seen = set()
+        for raw_name in raw_names.split(','):
+            name = raw_name.strip().lower().rstrip('/')
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+            if len(names) >= limit:
+                break
+        scope = 'requested'
+    else:
+        names = _observed_market_names(limit)
+        scope = 'channel-observed'
+
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain = chain_payload.get('chain', {}) if chain_status == 200 else {}
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+    rows = [_expiring_name_payload(name, chain_height) for name in names]
+
+    rows.sort(key=lambda row: (
+        row.get('blocksUntilExpire') is None,
+        row.get('blocksUntilExpire') if row.get('blocksUntilExpire') is not None else 10**18,
+        row.get('name') or '',
+    ))
+
+    return jsonify({
+        "scope": scope,
+        "global": False,
+        "globalReason": "This endpoint currently returns requested names or names observed by this Shakedex channel. A full global expiring-name feed needs a dedicated name-state indexer.",
+        "node": {
+            "reachable": chain_payload.get('reachable', False),
+            "height": chain_height,
+            "progress": chain_payload.get('progress'),
+            "spv": ((chain.get('options') or {}).get('spv') if isinstance(chain, dict) else None),
+        },
+        "total": len(rows),
+        "names": rows,
     })
 
 
