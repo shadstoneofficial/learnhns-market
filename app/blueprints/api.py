@@ -66,6 +66,18 @@ def _pending_listing_status(pending):
     if tx_error:
         status_code = tx_error[1]
         if status_code == 404:
+            chain_payload, chain_status = get_hsd_status_payload()
+            indexers = {}
+            if chain_status == 200:
+                indexers = ((chain_payload.get('chain') or {}).get('indexers') or {})
+            if indexers.get('indexTX') is False:
+                return {
+                    "status": "pending-submitted",
+                    "pendingReason": "Pending record received; this channel is not transaction-indexed, so finalization must be checked by name/proof upload.",
+                    "blocksUntilFinalize": None,
+                    "chainHeight": chain_payload.get('height') if chain_status == 200 else None,
+                    "transferHeight": None,
+                }
             return {
                 "status": "pending-submitted",
                 "pendingReason": "Waiting for transfer transaction to appear",
