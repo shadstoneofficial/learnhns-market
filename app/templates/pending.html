@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-100">
+    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+            <p class="text-sm font-semibold uppercase tracking-wide text-amber-700">Pending Shakedex Listing</p>
+            <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">{{ pending.name }}</h1>
+            {% if pending.expectedPrice %}
+                <div class="text-3xl text-amber-700 font-bold">{{ "%.6f"|format(pending.expectedPrice / 1000000) }} <span class="text-xl text-gray-500 font-medium">HNS expected</span></div>
+            {% else %}
+                <div class="text-2xl text-gray-500 font-bold">Price coming soon</div>
+            {% endif %}
+        </div>
+        <span class="rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-800">Not buyable yet</span>
+    </div>
+
+    <div class="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-900">
+        <p class="font-semibold">{{ pending.pendingReason or 'Waiting for Shakedex proof upload.' }}</p>
+        {% if pending.blocksUntilFinalize is not none %}
+            <p class="text-sm mt-1">
+                {% if pending.blocksUntilFinalize > 0 %}
+                    Estimated lockup remaining: {{ pending.blocksUntilFinalize }} blocks.
+                {% else %}
+                    The transfer lockup appears complete. The seller can finalize the Shakedex lock and upload the proof.
+                {% endif %}
+            </p>
+        {% endif %}
+    </div>
+
+    <div class="space-y-3 text-gray-700">
+        <p><strong class="text-gray-800">Status:</strong> {{ pending.status }}</p>
+        <p><strong class="text-gray-800">Listing Mode:</strong> {{ pending.listingMode or 'fixed-price' }}</p>
+        <p><strong class="text-gray-800">Network:</strong> {{ pending.network }}</p>
+        <p>
+            <strong class="text-gray-800">Transfer Transaction:</strong>
+            <a class="font-mono text-indigo-600 hover:underline break-all" href="https://shakeshift.com/transaction/{{ pending.transferTxHash }}" target="_blank" rel="noopener noreferrer">{{ pending.transferTxHash }}</a>
+        </p>
+        {% if pending.transferHeight %}
+            <p><strong class="text-gray-800">Transfer Height:</strong> {{ pending.transferHeight }}</p>
+        {% endif %}
+        {% if pending.chainHeight %}
+            <p><strong class="text-gray-800">Channel Height:</strong> {{ pending.chainHeight }}</p>
+        {% endif %}
+        {% if pending.sellerNote %}
+            <div>
+                <strong class="text-gray-800">Seller Note:</strong>
+                <div class="prose mt-1">{{ pending.sellerNote | safe }}</div>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="mt-8">
+        <a href="{{ url_for('main.index') }}" class="inline-block bg-indigo-50 text-indigo-700 px-4 py-2 rounded font-medium hover:bg-indigo-100 transition">Back to marketplace</a>
+    </div>
+</div>
+{% endblock %}

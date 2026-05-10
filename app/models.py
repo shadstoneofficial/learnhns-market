@@ -25,3 +25,28 @@ class Listing(db.Model):
 
     def is_expired(self):
         return self.expires_at and self.expires_at < datetime.utcnow()
+
+
+class PendingListing(db.Model):
+    __tablename__ = 'pending_listings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    network = db.Column(db.String(20), default='main', nullable=False, index=True)
+    transfer_tx_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    transfer_output_idx = db.Column(db.Integer, nullable=True)
+    lock_script_addr = db.Column(db.String(100), nullable=True)
+    listing_mode = db.Column(db.String(40), default='fixed-price', nullable=False)
+    expected_price = db.Column(db.BigInteger, nullable=True)
+    seller_note = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(40), default='pending-submitted', nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('name', 'network', name='uq_pending_listings_name_network'),
+    )
+
+    def is_expired(self):
+        return self.expires_at and self.expires_at < datetime.utcnow()

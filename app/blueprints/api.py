@@ -3,7 +3,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import requests
 from sqlalchemy.exc import IntegrityError
-from app.models import db, Listing
+from app.models import db, Listing, PendingListing
 from app.utils import (
     fixed_price_listing_fields,
     validate_shakedex_proof,
@@ -17,6 +17,9 @@ from urllib.parse import urljoin
 
 api_bp = Blueprint('api', __name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day"])
+
+SHAKEDEX_TRANSFER_LOCKUP = 288
+PENDING_TERMINAL_STATUSES = {'active', 'cancelled', 'expired', 'failed'}
 
 
 def _bob_auction_from_listing(listing):
@@ -37,6 +40,129 @@ def _bob_auction_from_listing(listing):
         "createdAt": listing.created_at.isoformat() if listing.created_at else None,
         "expiresAt": listing.expires_at.isoformat() if listing.expires_at else None,
         "url": f"/listing/{listing.name}",
+    }
+
+
+def _pending_listing_status(pending):
+    if pending.is_expired():
+        return {
+            "status": "expired",
+            "pendingReason": "Pending listing expired",
+            "blocksUntilFinalize": None,
+            "chainHeight": None,
+            "transferHeight": None,
+        }
+
+    if pending.status in PENDING_TERMINAL_STATUSES:
+        return {
+            "status": pending.status,
+            "pendingReason": "Pending listing is no longer awaiting finalization",
+            "blocksUntilFinalize": None,
+            "chainHeight": None,
+            "transferHeight": None,
+        }
+
+    tx, tx_error = _fetch_hsd_tx(pending.transfer_tx_hash)
+    if tx_error:
+        status_code = tx_error[1]
+        if status_code == 404:
+            return {
+                "status": "pending-submitted",
+                "pendingReason": "Waiting for transfer transaction to appear",
+                "blocksUntilFinalize": None,
+                "chainHeight": None,
+                "transferHeight": None,
+            }
+        return {
+            "status": pending.status or "pending-submitted",
+            "pendingReason": "Could not refresh chain status",
+            "blocksUntilFinalize": None,
+            "chainHeight": None,
+            "transferHeight": None,
+        }
+
+    tx_height = tx.get('height') if isinstance(tx, dict) else None
+    if not isinstance(tx_height, int) or tx_height < 0:
+        return {
+            "status": "transfer-unconfirmed",
+            "pendingReason": "Waiting for transfer confirmation",
+            "blocksUntilFinalize": None,
+            "chainHeight": None,
+            "transferHeight": tx_height,
+        }
+
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+    if not isinstance(chain_height, int):
+        return {
+            "status": "transfer-lockup",
+            "pendingReason": "Transfer confirmed; waiting for chain status",
+            "blocksUntilFinalize": None,
+            "chainHeight": None,
+            "transferHeight": tx_height,
+        }
+
+    blocks_since_transfer = max(chain_height - tx_height, 0)
+    blocks_until_finalize = max((SHAKEDEX_TRANSFER_LOCKUP + 1) - blocks_since_transfer, 0)
+    if blocks_until_finalize > 0:
+        return {
+            "status": "transfer-lockup",
+            "pendingReason": "Waiting for Shakedex lock finalization",
+            "blocksUntilFinalize": blocks_until_finalize,
+            "chainHeight": chain_height,
+            "transferHeight": tx_height,
+        }
+
+    return {
+        "status": "ready-to-finalize",
+        "pendingReason": "Ready for seller to finalize the Shakedex lock",
+        "blocksUntilFinalize": 0,
+        "chainHeight": chain_height,
+        "transferHeight": tx_height,
+    }
+
+
+def _pending_listing_payload(pending, refresh=True):
+    status_info = _pending_listing_status(pending) if refresh else {
+        "status": pending.status,
+        "pendingReason": None,
+        "blocksUntilFinalize": None,
+        "chainHeight": None,
+        "transferHeight": None,
+    }
+
+    return {
+        "id": f"pending-{pending.id}",
+        "name": pending.name,
+        "network": pending.network,
+        "status": status_info["status"],
+        "buyable": False,
+        "pending": True,
+        "pendingReason": status_info["pendingReason"],
+        "transferTxHash": pending.transfer_tx_hash,
+        "transferOutputIdx": pending.transfer_output_idx,
+        "lockScriptAddr": pending.lock_script_addr,
+        "listingMode": pending.listing_mode,
+        "expectedPrice": pending.expected_price,
+        "blocksUntilFinalize": status_info["blocksUntilFinalize"],
+        "chainHeight": status_info["chainHeight"],
+        "transferHeight": status_info["transferHeight"],
+        "sellerNote": pending.seller_note,
+        "createdAt": pending.created_at.isoformat() if pending.created_at else None,
+        "updatedAt": pending.updated_at.isoformat() if pending.updated_at else None,
+        "url": f"/pending/{pending.name}",
+    }
+
+
+def _bob_auction_from_pending(pending):
+    payload = _pending_listing_payload(pending)
+    return {
+        **payload,
+        "bids": [],
+        "data": [],
+        "version": 2,
+        "description": payload["pendingReason"],
+        "url": f"/pending/{pending.name}",
     }
 
 
@@ -145,15 +271,97 @@ def auctions():
         listing for listing in Listing.query.filter_by(status='active').order_by(Listing.created_at.desc()).all()
         if not listing.is_expired()
     ]
-    total = len(active_listings)
+    active_names = {listing.name for listing in active_listings}
+    pending_listings = [
+        pending for pending in PendingListing.query.order_by(PendingListing.created_at.desc()).all()
+        if pending.status not in PENDING_TERMINAL_STATUSES
+        and not pending.is_expired()
+        and pending.name not in active_names
+    ]
+    all_rows = [
+        *[_bob_auction_from_pending(pending) for pending in pending_listings],
+        *[_bob_auction_from_listing(listing) for listing in active_listings],
+    ]
+    total = len(all_rows)
     start = (page - 1) * per_page
     end = start + per_page
-    page_listings = active_listings[start:end]
 
     return jsonify({
         "total": total,
-        "auctions": [_bob_auction_from_listing(listing) for listing in page_listings],
+        "auctions": all_rows[start:end],
     })
+
+
+@api_bp.route('/v2/pending-listings', methods=['GET'])
+def pending_listings():
+    pending = [
+        row for row in PendingListing.query.order_by(PendingListing.created_at.desc()).all()
+        if row.status not in PENDING_TERMINAL_STATUSES and not row.is_expired()
+    ]
+    return jsonify({
+        "total": len(pending),
+        "pending": [_pending_listing_payload(row) for row in pending],
+    })
+
+
+@api_bp.route('/v2/pending-listings', methods=['POST'])
+@limiter.limit("20 per hour")
+def create_pending_listing():
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('name', '')).strip().lower().rstrip('/')
+    network = str(data.get('network', 'main')).strip().lower()
+    transfer_tx_hash = str(data.get('transferTxHash', data.get('transfer_tx_hash', ''))).strip().lower()
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    if network not in {'main', 'testnet', 'regtest', 'simnet'}:
+        return jsonify({"error": "network is invalid"}), 400
+    if len(transfer_tx_hash) != 64 or any(c not in '0123456789abcdef' for c in transfer_tx_hash):
+        return jsonify({"error": "transferTxHash must be a 64-character hex string"}), 400
+
+    transfer_output_idx = data.get('transferOutputIdx', data.get('transfer_output_idx'))
+    if transfer_output_idx is not None:
+        try:
+            transfer_output_idx = int(transfer_output_idx)
+        except (TypeError, ValueError):
+            return jsonify({"error": "transferOutputIdx must be an integer"}), 400
+        if transfer_output_idx < 0:
+            return jsonify({"error": "transferOutputIdx must be non-negative"}), 400
+
+    expected_price = data.get('expectedPrice', data.get('expected_price'))
+    if expected_price in ('', None):
+        expected_price = None
+    else:
+        try:
+            expected_price = int(expected_price)
+        except (TypeError, ValueError):
+            return jsonify({"error": "expectedPrice must be an integer in base HNS units"}), 400
+        if expected_price < 0:
+            return jsonify({"error": "expectedPrice must be non-negative"}), 400
+
+    pending = PendingListing.query.filter_by(name=name, network=network).first()
+    if pending is None:
+        pending = PendingListing(name=name, network=network, transfer_tx_hash=transfer_tx_hash)
+
+    pending.transfer_tx_hash = transfer_tx_hash
+    pending.transfer_output_idx = transfer_output_idx
+    pending.lock_script_addr = data.get('lockScriptAddr', data.get('lock_script_addr'))
+    pending.listing_mode = data.get('listingMode', data.get('listing_mode')) or 'fixed-price'
+    pending.expected_price = expected_price
+    pending.seller_note = sanitize_html(data.get('sellerNote', data.get('seller_note', '')))
+    pending.status = 'pending-submitted'
+
+    try:
+        db.session.add(pending)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "A pending listing with that transferTxHash already exists"}), 409
+
+    return jsonify({
+        "success": True,
+        "pending": _pending_listing_payload(pending),
+    }), 201
 
 
 @api_bp.route('/v2/hsd/status', methods=['GET'])
@@ -318,6 +526,9 @@ def upload_proof():
     
     try:
         db.session.add(listing)
+        pending = PendingListing.query.filter_by(name=listing.name).first()
+        if pending:
+            pending.status = 'active'
         db.session.commit()
     except IntegrityError:
         db.session.rollback()

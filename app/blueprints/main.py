@@ -3,7 +3,8 @@ from urllib.parse import quote
 
 from flask import Blueprint, jsonify, render_template, request
 from app.blueprints.api import get_hsd_status_payload
-from app.models import Listing
+from app.blueprints.api import _pending_listing_payload
+from app.models import Listing, PendingListing
 
 main_bp = Blueprint('main', __name__)
 
@@ -13,7 +14,19 @@ def index():
     min_price = request.args.get('min_price')
     # Basic active listings query
     listings = Listing.query.filter_by(status='active').order_by(Listing.created_at.desc()).all()
-    return render_template('index.html', listings=listings, hsd_readiness=_hsd_readiness())
+    active_names = {listing.name for listing in listings}
+    pending_listings = [
+        pending for pending in PendingListing.query.order_by(PendingListing.created_at.desc()).all()
+        if pending.status not in {'active', 'cancelled', 'expired', 'failed'}
+        and not pending.is_expired()
+        and pending.name not in active_names
+    ]
+    return render_template(
+        'index.html',
+        listings=listings,
+        pending_listings=[_pending_listing_payload(pending) for pending in pending_listings],
+        hsd_readiness=_hsd_readiness(),
+    )
 
 @main_bp.route('/upload')
 def upload():
@@ -56,6 +69,16 @@ def listing_detail(name):
 def listing_proof(name):
     listing = Listing.query.filter_by(name=name, status='active').first_or_404()
     return jsonify(listing.proof_json)
+
+
+@main_bp.route('/pending/<name>')
+def pending_detail(name):
+    pending = PendingListing.query.filter_by(name=name).first_or_404()
+    return render_template(
+        'pending.html',
+        pending=_pending_listing_payload(pending),
+        hsd_readiness=_hsd_readiness(),
+    )
 
 
 def _hsd_readiness():
