@@ -250,21 +250,68 @@ def _active_listing_for_name(name):
     )
 
 
-def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
+def _listing_coin_ref(listing):
     proof = listing.proof_json
-    tx_hash = proof["lockingTxHash"]
-    output_index = proof["lockingOutputIdx"]
-    coin, error = _fetch_hsd_coin(tx_hash, output_index)
+    return proof["lockingTxHash"], proof["lockingOutputIdx"]
 
+
+def _tx_spends_listing_coin(tx, listing):
+    tx_hash, output_index = _listing_coin_ref(listing)
+    inputs = tx.get('inputs', []) if isinstance(tx, dict) else []
+
+    for tx_input in inputs:
+        prevout = tx_input.get('prevout') if isinstance(tx_input, dict) else None
+        if not isinstance(prevout, dict):
+            continue
+
+        prev_hash = prevout.get('hash')
+        prev_index = prevout.get('index')
+        try:
+            prev_index = int(prev_index)
+        except (TypeError, ValueError):
+            continue
+
+        if prev_hash == tx_hash and prev_index == int(output_index):
+            return True
+
+    return False
+
+
+def _validate_hex_hash(value, field):
+    tx_hash = str(value or '').strip().lower()
+    if not tx_hash:
+        return None, None
+    if len(tx_hash) != 64 or any(c not in '0123456789abcdef' for c in tx_hash):
+        return None, (f"{field} must be a 64-character hex string", 400)
+    return tx_hash, None
+
+
+def _verified_listing_spend(tx_hash, listing):
+    tx, error = _fetch_hsd_tx(tx_hash)
     if error:
         message, status = error[:2]
-        if status != 404:
-            return False, {"error": message}, status
+        return None, {"error": message}, status
+
+    if not _tx_spends_listing_coin(tx, listing):
+        return None, {
+            "error": "Transaction does not spend this listing's Shakedex locking coin",
+            "url": f"/listing/{listing.name}",
+        }, 400
+
+    return tx, None, 200
+
+
+def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
+    tx_hash, output_index = _listing_coin_ref(listing)
+
+    if sale_tx_hash:
+        _, payload, status = _verified_listing_spend(sale_tx_hash, listing)
+        if status != 200:
+            return False, payload, status
 
         listing.status = 'sold'
         listing.sold_at = datetime.utcnow()
-        if sale_tx_hash:
-            listing.sale_tx_hash = sale_tx_hash
+        listing.sale_tx_hash = sale_tx_hash
         db.session.commit()
         return True, {
             "sold": True,
@@ -274,10 +321,45 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
             "url": f"/listing/{listing.name}",
         }, 200
 
+    coin, error = _fetch_hsd_coin(tx_hash, output_index)
+
+    if error:
+        message, status = error[:2]
+        if status != 404:
+            return False, {"error": message}, status
+
+        return False, {
+            "sold": False,
+            "status": "spent-unverified",
+            "message": "The Shakedex locking coin is no longer available. Submit a saleTxHash to verify this was a sale before recording sale history.",
+            "url": f"/listing/{listing.name}",
+        }, 200
+
     return False, {
         "sold": False,
         "status": listing.status,
         "coin": coin,
+        "url": f"/listing/{listing.name}",
+    }, 200
+
+
+def _mark_listing_cancelled_if_spent(listing, cancel_tx_hash):
+    if not cancel_tx_hash:
+        return False, {"error": "cancelTxHash is required to record a cancelled listing"}, 400
+
+    _, payload, status = _verified_listing_spend(cancel_tx_hash, listing)
+    if status != 200:
+        return False, payload, status
+
+    listing.status = 'cancelled'
+    listing.cancelled_at = datetime.utcnow()
+    listing.cancel_tx_hash = cancel_tx_hash
+    db.session.commit()
+    return True, {
+        "cancelled": True,
+        "status": listing.status,
+        "cancelledAt": listing.cancelled_at.isoformat(),
+        "cancelTxHash": listing.cancel_tx_hash,
         "url": f"/listing/{listing.name}",
     }, 200
 
@@ -659,11 +741,29 @@ def refresh_listing_status(name):
         return jsonify({"error": "Active listing not found"}), 404
 
     data = request.get_json(silent=True) or {}
-    sale_tx_hash = str(data.get('saleTxHash', data.get('sale_tx_hash', ''))).strip().lower()
-    if sale_tx_hash and (len(sale_tx_hash) != 64 or any(c not in '0123456789abcdef' for c in sale_tx_hash)):
-        return jsonify({"error": "saleTxHash must be a 64-character hex string"}), 400
+    request_values = {**request.args.to_dict(), **data}
+    sale_tx_hash, sale_hash_error = _validate_hex_hash(
+        request_values.get('saleTxHash', request_values.get('sale_tx_hash')),
+        'saleTxHash',
+    )
+    if sale_hash_error:
+        message, status = sale_hash_error
+        return jsonify({"error": message}), status
 
-    sold, payload, status = _mark_listing_sold_if_spent(listing, sale_tx_hash or None)
+    cancel_tx_hash, cancel_hash_error = _validate_hex_hash(
+        request_values.get('cancelTxHash', request_values.get('cancel_tx_hash')),
+        'cancelTxHash',
+    )
+    if cancel_hash_error:
+        message, status = cancel_hash_error
+        return jsonify({"error": message}), status
+
+    outcome = str(request_values.get('outcome', request_values.get('status', 'sold' if sale_tx_hash else 'refresh'))).strip().lower()
+    if outcome in {'cancelled', 'canceled', 'cancel'}:
+        _, payload, status = _mark_listing_cancelled_if_spent(listing, cancel_tx_hash)
+        return jsonify(payload), status
+
+    _, payload, status = _mark_listing_sold_if_spent(listing, sale_tx_hash or None)
     return jsonify(payload), status
 
 

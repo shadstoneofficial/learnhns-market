@@ -35,6 +35,15 @@
                 <a class="font-mono text-indigo-600 hover:underline break-all" href="https://shakeshift.com/transaction/{{ listing.sale_tx_hash }}" target="_blank" rel="noopener noreferrer">{{ listing.sale_tx_hash }}</a>
             </p>
         {% endif %}
+        {% if listing.cancelled_at %}
+            <p class="mt-2"><strong class="text-gray-800">Cancelled On:</strong> {{ listing.cancelled_at.strftime('%Y-%m-%d') }}</p>
+        {% endif %}
+        {% if listing.cancel_tx_hash %}
+            <p class="mt-2">
+                <strong class="text-gray-800">Cancellation Transaction:</strong>
+                <a class="font-mono text-indigo-600 hover:underline break-all" href="https://shakeshift.com/transaction/{{ listing.cancel_tx_hash }}" target="_blank" rel="noopener noreferrer">{{ listing.cancel_tx_hash }}</a>
+            </p>
+        {% endif %}
     </div>
     
     {% if bob_deep_link %}
@@ -66,18 +75,31 @@
     </div>
     {% endif %}
 
-    {% if sale_history %}
+    {% if listing_history %}
     <div class="mt-10 border-t border-gray-200 pt-8">
-        <h2 class="text-2xl font-bold mb-4 text-gray-900">Sale History</h2>
+        <h2 class="text-2xl font-bold mb-4 text-gray-900">Listing History</h2>
         <div class="space-y-3">
-            {% for sale in sale_history %}
+            {% for sale in listing_history %}
             <div class="rounded-md border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <span><strong>{{ sale.price_hns }} HNS</strong> · {{ sale.status }}</span>
-                    <span class="text-gray-500">{{ sale.sold_at.strftime('%Y-%m-%d') if sale.sold_at else sale.created_at.strftime('%Y-%m-%d') if sale.created_at else 'Unknown date' }}</span>
+                    <span class="text-gray-500">
+                        {% if sale.sold_at %}
+                            {{ sale.sold_at.strftime('%Y-%m-%d') }}
+                        {% elif sale.cancelled_at %}
+                            {{ sale.cancelled_at.strftime('%Y-%m-%d') }}
+                        {% elif sale.created_at %}
+                            {{ sale.created_at.strftime('%Y-%m-%d') }}
+                        {% else %}
+                            Unknown date
+                        {% endif %}
+                    </span>
                 </div>
                 {% if sale.sale_tx_hash %}
                     <a class="mt-2 block font-mono text-indigo-600 hover:underline break-all" href="https://shakeshift.com/transaction/{{ sale.sale_tx_hash }}" target="_blank" rel="noopener noreferrer">{{ sale.sale_tx_hash }}</a>
+                {% endif %}
+                {% if sale.cancel_tx_hash %}
+                    <a class="mt-2 block font-mono text-gray-600 hover:underline break-all" href="https://shakeshift.com/transaction/{{ sale.cancel_tx_hash }}" target="_blank" rel="noopener noreferrer">{{ sale.cancel_tx_hash }}</a>
                 {% endif %}
             </div>
             {% endfor %}

@@ -64,7 +64,7 @@ def status():
 @main_bp.route('/listing/<name>')
 def listing_detail(name):
     normalized_name = name.lower().rstrip('/')
-    sale_history = _sale_history(normalized_name)
+    listing_history = _listing_history(normalized_name)
     listing = (
         Listing.query
         .filter_by(name=normalized_name, status='active')
@@ -82,7 +82,7 @@ def listing_detail(name):
             return render_template(
                 'pending.html',
                 pending=_pending_listing_payload(pending),
-                sale_history=sale_history,
+                listing_history=listing_history,
                 hsd_readiness=_hsd_readiness(),
             )
 
@@ -105,7 +105,7 @@ def listing_detail(name):
         'listing.html',
         listing=listing,
         bob_deep_link=bob_deep_link,
-        sale_history=sale_history,
+        listing_history=listing_history,
         hsd_readiness=_hsd_readiness(),
     )
 
@@ -120,11 +120,11 @@ def pending_detail(name):
     return redirect(url_for('main.listing_detail', name=name), code=301)
 
 
-def _sale_history(name):
-    sold_statuses = ('sold', 'completed', 'archived')
+def _listing_history(name):
+    historical_statuses = ('sold', 'completed', 'archived', 'cancelled')
     return (
         Listing.query
-        .filter(Listing.name == name, Listing.status.in_(sold_statuses))
+        .filter(Listing.name == name, Listing.status.in_(historical_statuses))
         .order_by(Listing.created_at.desc())
         .all()
     )
