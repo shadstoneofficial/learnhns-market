@@ -13,6 +13,7 @@ from app.utils import (
 )
 import os
 import json
+from datetime import datetime
 from urllib.parse import urljoin
 
 api_bp = Blueprint('api', __name__)
@@ -240,6 +241,47 @@ def _listing_is_available(listing):
     return listing and listing.status == 'active' and not listing.is_expired()
 
 
+def _active_listing_for_name(name):
+    return (
+        Listing.query
+        .filter_by(name=name, status='active')
+        .order_by(Listing.created_at.desc())
+        .first()
+    )
+
+
+def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
+    proof = listing.proof_json
+    tx_hash = proof["lockingTxHash"]
+    output_index = proof["lockingOutputIdx"]
+    coin, error = _fetch_hsd_coin(tx_hash, output_index)
+
+    if error:
+        message, status = error[:2]
+        if status != 404:
+            return False, {"error": message}, status
+
+        listing.status = 'sold'
+        listing.sold_at = datetime.utcnow()
+        if sale_tx_hash:
+            listing.sale_tx_hash = sale_tx_hash
+        db.session.commit()
+        return True, {
+            "sold": True,
+            "status": listing.status,
+            "soldAt": listing.sold_at.isoformat(),
+            "saleTxHash": listing.sale_tx_hash,
+            "url": f"/listing/{listing.name}",
+        }, 200
+
+    return False, {
+        "sold": False,
+        "status": listing.status,
+        "coin": coin,
+        "url": f"/listing/{listing.name}",
+    }, 200
+
+
 def _hsd_api_style():
     style = current_app.config.get('HSD_API_STYLE', 'raw')
     return style.lower()
@@ -442,6 +484,8 @@ def sales():
                 "priceHns": float(listing.price_hns),
                 "status": listing.status,
                 "createdAt": listing.created_at.isoformat() if listing.created_at else None,
+                "soldAt": listing.sold_at.isoformat() if listing.sold_at else None,
+                "saleTxHash": listing.sale_tx_hash,
                 "expiresAt": listing.expires_at.isoformat() if listing.expires_at else None,
                 "url": f"/listing/{listing.name}",
             }
@@ -587,7 +631,7 @@ def get_hsd_status_payload():
 
 @api_bp.route('/v2/listings/<name>/coin', methods=['GET'])
 def listing_coin(name):
-    listing = Listing.query.filter_by(name=name).first()
+    listing = _active_listing_for_name(name)
     if not _listing_is_available(listing):
         return jsonify({"error": "Listing not found"}), 404
 
@@ -606,6 +650,21 @@ def listing_coin(name):
         "lockingOutputIdx": output_index,
         "coin": coin,
     })
+
+
+@api_bp.route('/v2/listings/<name>/refresh-status', methods=['GET', 'POST'])
+def refresh_listing_status(name):
+    listing = _active_listing_for_name(name.lower().rstrip('/'))
+    if not _listing_is_available(listing):
+        return jsonify({"error": "Active listing not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    sale_tx_hash = str(data.get('saleTxHash', data.get('sale_tx_hash', ''))).strip().lower()
+    if sale_tx_hash and (len(sale_tx_hash) != 64 or any(c not in '0123456789abcdef' for c in sale_tx_hash)):
+        return jsonify({"error": "saleTxHash must be a 64-character hex string"}), 400
+
+    sold, payload, status = _mark_listing_sold_if_spent(listing, sale_tx_hash or None)
+    return jsonify(payload), status
 
 
 @api_bp.route('/v2/tx/<tx_hash>/status', methods=['GET'])

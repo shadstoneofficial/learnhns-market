@@ -26,6 +26,15 @@
         <p class="mb-2"><strong class="text-gray-800">Price:</strong> {{ listing.price_hns }} HNS</p>
         <p class="mb-2"><strong class="text-gray-800">Seller HNS Address:</strong> <span class="font-mono">{{ listing.seller_hns_address }}</span></p>
         <p><strong class="text-gray-800">Listed On:</strong> {{ listing.created_at.strftime('%Y-%m-%d') }}</p>
+        {% if listing.sold_at %}
+            <p class="mt-2"><strong class="text-gray-800">Sold On:</strong> {{ listing.sold_at.strftime('%Y-%m-%d') }}</p>
+        {% endif %}
+        {% if listing.sale_tx_hash %}
+            <p class="mt-2">
+                <strong class="text-gray-800">Sale Transaction:</strong>
+                <a class="font-mono text-indigo-600 hover:underline break-all" href="https://shakeshift.com/transaction/{{ listing.sale_tx_hash }}" target="_blank" rel="noopener noreferrer">{{ listing.sale_tx_hash }}</a>
+            </p>
+        {% endif %}
     </div>
     
     {% if bob_deep_link %}
@@ -65,8 +74,11 @@
             <div class="rounded-md border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <span><strong>{{ sale.price_hns }} HNS</strong> · {{ sale.status }}</span>
-                    <span class="text-gray-500">{{ sale.created_at.strftime('%Y-%m-%d') if sale.created_at else 'Unknown date' }}</span>
+                    <span class="text-gray-500">{{ sale.sold_at.strftime('%Y-%m-%d') if sale.sold_at else sale.created_at.strftime('%Y-%m-%d') if sale.created_at else 'Unknown date' }}</span>
                 </div>
+                {% if sale.sale_tx_hash %}
+                    <a class="mt-2 block font-mono text-indigo-600 hover:underline break-all" href="https://shakeshift.com/transaction/{{ sale.sale_tx_hash }}" target="_blank" rel="noopener noreferrer">{{ sale.sale_tx_hash }}</a>
+                {% endif %}
             </div>
             {% endfor %}
         </div>

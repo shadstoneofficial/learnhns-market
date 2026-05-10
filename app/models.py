@@ -20,6 +20,8 @@ class Listing(db.Model):
     
     status = db.Column(db.String(20), default='active', index=True)  # active, archived, flagged
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sold_at = db.Column(db.DateTime, nullable=True, index=True)
+    sale_tx_hash = db.Column(db.String(64), nullable=True, index=True)
     expires_at = db.Column(db.DateTime, nullable=True)
     flagged_reason = db.Column(db.Text, nullable=True)
 

@@ -62,8 +62,11 @@
             <div class="rounded-md border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <span><strong>{{ sale.price_hns }} HNS</strong> · {{ sale.status }}</span>
-                    <span class="text-gray-500">{{ sale.created_at.strftime('%Y-%m-%d') if sale.created_at else 'Unknown date' }}</span>
+                    <span class="text-gray-500">{{ sale.sold_at.strftime('%Y-%m-%d') if sale.sold_at else sale.created_at.strftime('%Y-%m-%d') if sale.created_at else 'Unknown date' }}</span>
                 </div>
+                {% if sale.sale_tx_hash %}
+                    <a class="mt-2 block font-mono text-indigo-600 hover:underline break-all" href="https://shakeshift.com/transaction/{{ sale.sale_tx_hash }}" target="_blank" rel="noopener noreferrer">{{ sale.sale_tx_hash }}</a>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
