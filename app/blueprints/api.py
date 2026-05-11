@@ -1018,7 +1018,7 @@ def listing_coin(name):
 
 @api_bp.route('/v2/coin/<tx_hash>/<int:output_index>', methods=['GET'])
 def coin_lookup(tx_hash, output_index):
-    tx_hash, hash_error = _validate_hex_hash(tx_hash)
+    tx_hash, hash_error = _validate_hex_hash(tx_hash, "txHash")
     if hash_error:
         message, status = hash_error
         return jsonify({"error": message}), status
