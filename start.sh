@@ -3,6 +3,13 @@ set -e
 
 echo "Starting Deployment Process..."
 
+if [ "$PROCESS_TYPE" = "expiring-watcher" ]; then
+    echo "Starting Expiring Name Watcher..."
+    exec python scripts/watch-global-expiring-names.py \
+        --poll-seconds "${WATCHER_POLL_SECONDS:-60}" \
+        --batch-size "${WATCHER_BATCH_SIZE:-10}"
+fi
+
 # 1. Run Database Migrations
 echo "Running Database Migrations..."
 flask db upgrade
