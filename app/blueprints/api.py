@@ -638,12 +638,35 @@ def _global_name_payload(row):
     }
 
 
+def _store_global_name_state(payload, chain_height=None, network='main'):
+    if not payload.get('found'):
+        return None
+
+    row = GlobalNameState.query.filter_by(name=payload['name'], network=network).first()
+    if row is None:
+        row = GlobalNameState(name=payload['name'], network=network)
+
+    row.state = payload.get('state')
+    row.renewal_height = payload.get('renewalHeight')
+    row.expiration_height = payload.get('expirationHeight')
+    row.blocks_until_expire = payload.get('blocksUntilExpire')
+    row.days_until_expire = payload.get('daysUntilExpire')
+    row.hours_until_expire = payload.get('hoursUntilExpire')
+    row.expired = bool(payload.get('expired'))
+    row.source_height = chain_height
+    row.last_checked_at = datetime.utcnow()
+    row.updated_at = datetime.utcnow()
+    db.session.add(row)
+    return row
+
+
 def _name_indexer_status_payload(network='main'):
     progress = NameIndexerProgress.query.filter_by(network=network).first()
     if progress is None:
         return {
             "status": "not-started",
             "network": network,
+            "mode": "forward-only",
             "lastIndexedHeight": None,
             "targetHeight": None,
             "namesIndexed": 0,
@@ -652,12 +675,14 @@ def _name_indexer_status_payload(network='main'):
             "finishedAt": None,
             "updatedAt": None,
             "ready": False,
+            "complete": False,
         }
 
     status = progress.status or "not-started"
     return {
         "status": status,
         "network": progress.network,
+        "mode": "forward-only",
         "lastIndexedHeight": progress.last_indexed_height,
         "targetHeight": progress.target_height,
         "namesIndexed": progress.names_indexed,
@@ -665,7 +690,8 @@ def _name_indexer_status_payload(network='main'):
         "startedAt": progress.started_at.isoformat() if progress.started_at else None,
         "finishedAt": progress.finished_at.isoformat() if progress.finished_at else None,
         "updatedAt": progress.updated_at.isoformat() if progress.updated_at else None,
-        "ready": status == "ready",
+        "ready": status in {"watching", "ready"} and not progress.last_error,
+        "complete": status == "ready",
     }
 
 
@@ -1128,7 +1154,9 @@ def expiring_names():
         "scope": scope,
         "global": scope == 'global' and indexer_status.get('ready', False),
         "globalReason": (
-            None
+            "Forward-only global discovery is active from the recorded index height. It does not include historical names before the watcher started."
+            if scope == 'global' and indexer_status.get('ready', False) and not indexer_status.get('complete')
+            else None
             if scope == 'global' and indexer_status.get('ready', False)
             else "Full global discovery needs the name-state indexer to finish before this feed is complete."
         ),
