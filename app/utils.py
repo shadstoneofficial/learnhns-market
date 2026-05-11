@@ -2,6 +2,7 @@ import requests
 import bleach
 from flask import current_app
 from decimal import Decimal
+from datetime import datetime
 import re
 
 HNS_BASE_UNITS = Decimal("1000000")
@@ -129,9 +130,14 @@ def validate_shakedex_proof(proof_data: dict) -> tuple[bool, str]:
 
 def fixed_price_listing_fields(proof_data: dict) -> dict:
     bid = proof_data['data'][0]
+    expires_at = None
+    lock_time = bid.get('lockTime')
+    if isinstance(lock_time, int) and lock_time > 0:
+        expires_at = datetime.utcfromtimestamp(lock_time)
+
     return {
         'name': proof_data['name'],
         'price_hns': Decimal(bid['price']) / HNS_BASE_UNITS,
         'seller_hns_address': proof_data['paymentAddr'],
-        'expires_at': None,
+        'expires_at': expires_at,
     }

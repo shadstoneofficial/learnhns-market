@@ -26,6 +26,7 @@ PENDING_TERMINAL_STATUSES = {'active', 'cancelled', 'expired', 'failed'}
 def _bob_auction_from_listing(listing):
     proof = listing.proof_json
     bids = proof.get('data', [])
+    expires_at = listing.effective_expires_at()
     return {
         "id": listing.id,
         "name": proof["name"],
@@ -39,7 +40,7 @@ def _bob_auction_from_listing(listing):
         "version": proof.get("version", 2),
         "description": listing.description,
         "createdAt": listing.created_at.isoformat() if listing.created_at else None,
-        "expiresAt": listing.expires_at.isoformat() if listing.expires_at else None,
+        "expiresAt": expires_at.isoformat() if expires_at else None,
         "url": f"/listing/{listing.name}",
     }
 
@@ -1271,6 +1272,9 @@ def upload_proof():
     os.remove(temp_path)
     
     listing_fields = fixed_price_listing_fields(proof_data)
+    if listing_fields['expires_at'] and listing_fields['expires_at'] < datetime.utcnow():
+        return jsonify({"error": "This proof has already expired. Please create a fresh proof and upload it again."}), 400
+
     existing_active = Listing.query.filter_by(name=listing_fields['name'], status='active').first()
     if existing_active and not existing_active.is_expired():
         return jsonify({"error": f"An active listing for {listing_fields['name']} already exists"}), 409

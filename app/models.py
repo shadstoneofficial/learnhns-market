@@ -27,8 +27,26 @@ class Listing(db.Model):
     expires_at = db.Column(db.DateTime, nullable=True)
     flagged_reason = db.Column(db.Text, nullable=True)
 
+    def effective_expires_at(self):
+        if self.expires_at:
+            return self.expires_at
+
+        proof_data = self.proof_json or {}
+        bids = proof_data.get('data') or []
+        lock_times = [
+            bid.get('lockTime')
+            for bid in bids
+            if isinstance(bid, dict) and isinstance(bid.get('lockTime'), int)
+        ]
+
+        if not lock_times:
+            return None
+
+        return datetime.utcfromtimestamp(max(lock_times))
+
     def is_expired(self):
-        return self.expires_at and self.expires_at < datetime.utcnow()
+        expires_at = self.effective_expires_at()
+        return bool(expires_at and expires_at < datetime.utcnow())
 
 
 class PendingListing(db.Model):
