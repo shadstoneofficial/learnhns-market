@@ -1016,6 +1016,28 @@ def listing_coin(name):
     })
 
 
+@api_bp.route('/v2/coin/<tx_hash>/<int:output_index>', methods=['GET'])
+def coin_lookup(tx_hash, output_index):
+    tx_hash, hash_error = _validate_hex_hash(tx_hash)
+    if hash_error:
+        message, status = hash_error
+        return jsonify({"error": message}), status
+
+    if output_index < 0:
+        return jsonify({"error": "Invalid output index"}), 400
+
+    coin, error = _fetch_hsd_coin(tx_hash, output_index)
+    if error:
+        message, status = error[:2]
+        return jsonify({"error": message}), status
+
+    return jsonify({
+        "txHash": tx_hash,
+        "outputIndex": output_index,
+        "coin": coin,
+    })
+
+
 @api_bp.route('/v2/listings/<name>/refresh-status', methods=['GET', 'POST'])
 def refresh_listing_status(name):
     listing = _active_listing_for_name(name.lower().rstrip('/'))
