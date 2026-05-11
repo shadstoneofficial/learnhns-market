@@ -80,3 +80,41 @@ class ExpiringNameWatch(db.Model):
     __table_args__ = (
         db.UniqueConstraint('name', 'network', name='uq_expiring_name_watches_name_network'),
     )
+
+
+class GlobalNameState(db.Model):
+    __tablename__ = 'global_name_states'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    network = db.Column(db.String(20), default='main', nullable=False, index=True)
+    state = db.Column(db.String(40), nullable=True, index=True)
+    renewal_height = db.Column(db.Integer, nullable=True)
+    expiration_height = db.Column(db.Integer, nullable=True, index=True)
+    blocks_until_expire = db.Column(db.Integer, nullable=True, index=True)
+    days_until_expire = db.Column(db.Numeric(12, 4), nullable=True)
+    hours_until_expire = db.Column(db.Numeric(12, 4), nullable=True)
+    expired = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    source_height = db.Column(db.Integer, nullable=True, index=True)
+    last_checked_at = db.Column(db.DateTime, nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('name', 'network', name='uq_global_name_states_name_network'),
+    )
+
+
+class NameIndexerProgress(db.Model):
+    __tablename__ = 'name_indexer_progress'
+
+    id = db.Column(db.Integer, primary_key=True)
+    network = db.Column(db.String(20), default='main', nullable=False, unique=True, index=True)
+    status = db.Column(db.String(40), default='not-started', nullable=False, index=True)
+    last_indexed_height = db.Column(db.Integer, nullable=True, index=True)
+    target_height = db.Column(db.Integer, nullable=True, index=True)
+    names_indexed = db.Column(db.Integer, default=0, nullable=False)
+    last_error = db.Column(db.Text, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

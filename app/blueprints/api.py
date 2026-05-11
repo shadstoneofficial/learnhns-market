@@ -3,7 +3,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import requests
 from sqlalchemy.exc import IntegrityError
-from app.models import db, ExpiringNameWatch, Listing, PendingListing
+from app.models import db, ExpiringNameWatch, GlobalNameState, Listing, NameIndexerProgress, PendingListing
 from app.utils import (
     fixed_price_listing_fields,
     validate_shakedex_proof,
@@ -620,6 +620,70 @@ def _expiring_watch_payload(watch):
     }
 
 
+def _global_name_payload(row):
+    return {
+        "name": row.name,
+        "found": True,
+        "state": row.state,
+        "renewalHeight": row.renewal_height,
+        "expirationHeight": row.expiration_height,
+        "blocksUntilExpire": row.blocks_until_expire,
+        "daysUntilExpire": float(row.days_until_expire) if row.days_until_expire is not None else None,
+        "hoursUntilExpire": float(row.hours_until_expire) if row.hours_until_expire is not None else None,
+        "expired": row.expired,
+        "error": None,
+        "source": "global-index",
+        "sourceHeight": row.source_height,
+        "lastCheckedAt": row.last_checked_at.isoformat() if row.last_checked_at else None,
+    }
+
+
+def _name_indexer_status_payload(network='main'):
+    progress = NameIndexerProgress.query.filter_by(network=network).first()
+    if progress is None:
+        return {
+            "status": "not-started",
+            "network": network,
+            "lastIndexedHeight": None,
+            "targetHeight": None,
+            "namesIndexed": 0,
+            "lastError": None,
+            "startedAt": None,
+            "finishedAt": None,
+            "updatedAt": None,
+            "ready": False,
+        }
+
+    status = progress.status or "not-started"
+    return {
+        "status": status,
+        "network": progress.network,
+        "lastIndexedHeight": progress.last_indexed_height,
+        "targetHeight": progress.target_height,
+        "namesIndexed": progress.names_indexed,
+        "lastError": progress.last_error,
+        "startedAt": progress.started_at.isoformat() if progress.started_at else None,
+        "finishedAt": progress.finished_at.isoformat() if progress.finished_at else None,
+        "updatedAt": progress.updated_at.isoformat() if progress.updated_at else None,
+        "ready": status == "ready",
+    }
+
+
+def _cached_global_expiring_names(limit, network='main'):
+    rows = (
+        GlobalNameState.query
+        .filter_by(network=network)
+        .order_by(
+            GlobalNameState.blocks_until_expire.is_(None),
+            GlobalNameState.blocks_until_expire.asc(),
+            GlobalNameState.name.asc(),
+        )
+        .limit(limit)
+        .all()
+    )
+    return [_global_name_payload(row) for row in rows]
+
+
 def _cached_expiring_watches(limit, network='main'):
     rows = (
         ExpiringNameWatch.query
@@ -1009,8 +1073,12 @@ def expiring_names():
         return jsonify({"error": "limit must be an integer"}), 400
 
     raw_names = request.args.get('names', '')
+    requested_scope = request.args.get('scope', '').strip().lower()
     refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes'}
-    if raw_names:
+    if requested_scope == 'global':
+        names = []
+        scope = 'global'
+    elif raw_names:
         names = []
         seen = set()
         for raw_name in raw_names.split(','):
@@ -1032,7 +1100,11 @@ def expiring_names():
     chain_height = chain_payload.get('height') if chain_status == 200 else None
     rows = []
 
-    if scope == 'requested' or refresh:
+    indexer_status = _name_indexer_status_payload()
+
+    if scope == 'global':
+        rows = _cached_global_expiring_names(limit)
+    elif scope == 'requested' or refresh:
         for name in names:
             payload = _expiring_name_payload(name, chain_height)
             watch = _store_expiring_watch(
@@ -1054,8 +1126,13 @@ def expiring_names():
 
     return jsonify({
         "scope": scope,
-        "global": False,
-        "globalReason": "This endpoint currently returns requested names or names observed by this Shakedex channel. A full global expiring-name feed needs a dedicated name-state indexer.",
+        "global": scope == 'global' and indexer_status.get('ready', False),
+        "globalReason": (
+            None
+            if scope == 'global' and indexer_status.get('ready', False)
+            else "Full global discovery needs the name-state indexer to finish before this feed is complete."
+        ),
+        "indexer": indexer_status,
         "node": {
             "reachable": chain_payload.get('reachable', False),
             "height": chain_height,
@@ -1064,6 +1141,23 @@ def expiring_names():
         },
         "total": len(rows),
         "names": rows,
+    })
+
+
+@api_bp.route('/v2/expiring-names/indexer-status', methods=['GET'])
+def expiring_names_indexer_status():
+    network = request.args.get('network', 'main').strip().lower() or 'main'
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain = chain_payload.get('chain', {}) if chain_status == 200 else {}
+    return jsonify({
+        "success": True,
+        "indexer": _name_indexer_status_payload(network=network),
+        "node": {
+            "reachable": chain_payload.get('reachable', False),
+            "height": chain_payload.get('height') if chain_status == 200 else None,
+            "progress": chain_payload.get('progress'),
+            "spv": ((chain.get('options') or {}).get('spv') if isinstance(chain, dict) else None),
+        },
     })
 
 
