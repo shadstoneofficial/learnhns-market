@@ -7,10 +7,12 @@
     </div>
     
     <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">{{ listing.name }}</h1>
-    {% if listing.status == 'active' and not listing.is_expired() %}
+    {% if listing_display_status == 'active' %}
         <div class="text-3xl text-indigo-600 font-bold mb-6">{{ listing.price_hns }} <span class="text-xl text-gray-500 font-medium">HNS</span></div>
+    {% elif listing_display_status == 'expired' %}
+        <div class="mb-6 inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-amber-800">Expired</div>
     {% else %}
-        <div class="mb-6 inline-flex rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-gray-700">{{ listing.status }}</div>
+        <div class="mb-6 inline-flex rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-gray-700">{{ listing_display_status }}</div>
     {% endif %}
     
     <div class="mb-8 prose text-gray-700">
@@ -22,10 +24,16 @@
     </div>
     
     <div class="bg-gray-50 p-5 rounded-lg mb-8 text-sm text-gray-600 border border-gray-200 shadow-inner">
-        <p class="mb-2"><strong class="text-gray-800">Status:</strong> {{ listing.status }}</p>
+        <p class="mb-2"><strong class="text-gray-800">Status:</strong> {{ listing_display_status }}</p>
         <p class="mb-2"><strong class="text-gray-800">Price:</strong> {{ listing.price_hns }} HNS</p>
         <p class="mb-2"><strong class="text-gray-800">Seller HNS Address:</strong> <span class="font-mono">{{ listing.seller_hns_address }}</span></p>
         <p><strong class="text-gray-800">Listed On:</strong> {{ listing.created_at.strftime('%Y-%m-%d') }}</p>
+        {% if listing_expires_at %}
+            <p class="mt-2">
+                <strong class="text-gray-800">{% if listing_display_status == 'expired' %}Expired On:{% else %}Buyable Until:{% endif %}</strong>
+                {{ listing_expires_at.strftime('%Y-%m-%d %H:%M UTC') }}
+            </p>
+        {% endif %}
         {% if listing.sold_at %}
             <p class="mt-2"><strong class="text-gray-800">Sold On:</strong> {{ listing.sold_at.strftime('%Y-%m-%d') }}</p>
         {% endif %}
@@ -70,8 +78,13 @@
     </div>
     {% else %}
     <div class="mt-8 rounded-md border border-gray-200 bg-gray-50 p-4 text-gray-700">
-        <p class="font-semibold">This listing is not currently buyable.</p>
-        <p class="text-sm mt-1">This page remains available as the public history page for {{ listing.name }}.</p>
+        {% if listing_display_status == 'expired' %}
+            <p class="font-semibold">This proof has expired and is not currently buyable.</p>
+            <p class="text-sm mt-1">The seller can create and upload a fresh Shakedex proof to reactivate {{ listing.name }}.</p>
+        {% else %}
+            <p class="font-semibold">This listing is not currently buyable.</p>
+            <p class="text-sm mt-1">This page remains available as the public history page for {{ listing.name }}.</p>
+        {% endif %}
     </div>
     {% endif %}
 

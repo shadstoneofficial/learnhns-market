@@ -13,7 +13,10 @@ def index():
     query = request.args.get('q', '')
     min_price = request.args.get('min_price')
     # Basic active listings query
-    listings = Listing.query.filter_by(status='active').order_by(Listing.created_at.desc()).all()
+    listings = [
+        listing for listing in Listing.query.filter_by(status='active').order_by(Listing.created_at.desc()).all()
+        if not listing.is_expired()
+    ]
     active_names = {listing.name for listing in listings}
     pending_listings = [
         pending for pending in PendingListing.query.order_by(PendingListing.created_at.desc()).all()
@@ -93,8 +96,12 @@ def listing_detail(name):
             .first_or_404()
         )
 
+    listing_is_expired = listing.is_expired()
+    listing_display_status = 'expired' if listing_is_expired else listing.status
+    listing_expires_at = listing.effective_expires_at()
+
     bob_deep_link = None
-    if listing.status == 'active' and not listing.is_expired():
+    if listing.status == 'active' and not listing_is_expired:
         proof_json = json.dumps(listing.proof_json, separators=(',', ':'))
         bob_deep_link = (
             f"bob://x/fulfillauction?name={quote(listing.name, safe='')}"
@@ -104,6 +111,8 @@ def listing_detail(name):
     return render_template(
         'listing.html',
         listing=listing,
+        listing_display_status=listing_display_status,
+        listing_expires_at=listing_expires_at,
         bob_deep_link=bob_deep_link,
         listing_history=listing_history,
         hsd_readiness=_hsd_readiness(),
