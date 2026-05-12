@@ -67,15 +67,24 @@
             <a href="{{ url_for('main.status') }}" class="text-sm font-semibold underline mt-2 inline-block">View status</a>
         </div>
         {% endif %}
-        <a href="{{ bob_deep_link }}"
-           class="inline-block w-full sm:w-auto bg-indigo-600 text-white text-lg font-bold px-8 py-4 rounded-lg shadow-md hover:bg-indigo-700 transition transform hover:-translate-y-0.5">
-            Buy with Bob Wallet
-        </a>
+        <div class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Choose your wallet</div>
+        <div class="flex flex-col justify-center gap-3 sm:flex-row">
+            <a href="{{ bob_deep_link }}"
+               class="inline-block w-full sm:w-auto bg-indigo-600 text-white text-lg font-bold px-8 py-4 rounded-lg shadow-md hover:bg-indigo-700 transition transform hover:-translate-y-0.5">
+                Buy with Bob Wallet Desktop
+            </a>
+            <button type="button"
+                    id="buy-with-shake-wallet"
+                    class="inline-block w-full sm:w-auto bg-gray-900 text-white text-lg font-bold px-8 py-4 rounded-lg shadow-md hover:bg-gray-800 transition transform hover:-translate-y-0.5">
+                Buy with Shake Wallet Extension
+            </button>
+        </div>
+        <div id="shake-wallet-message" class="mx-auto mt-4 hidden max-w-xl rounded-md border p-4 text-left text-sm"></div>
         <div class="mt-4">
             <a href="{{ url_for('main.listing_proof', name=listing.name) }}" class="text-sm text-indigo-600 hover:underline">Download proof JSON</a>
         </div>
         <div class="mx-auto mt-4 max-w-xl rounded-md border border-indigo-100 bg-indigo-50 p-4 text-left text-sm text-indigo-900">
-            <p class="font-semibold">Requires the May 2026 experimental Bob Wallet build.</p>
+            <p class="font-semibold">Bob desktop buying requires the May 2026 experimental Bob Wallet build.</p>
             <p class="mt-1">
                 Stable Bob Wallet does not open LearnHNS Market buy links yet.
                 <a href="https://bobwallet.org/download" target="_blank" rel="noopener noreferrer" class="font-semibold underline hover:text-indigo-700">Download Bob Wallet</a>
@@ -83,6 +92,71 @@
             </p>
         </div>
     </div>
+    <script id="listing-proof-json" type="application/json">{{ listing.proof_json | tojson }}</script>
+    <script>
+      (() => {
+        const shakeButton = document.getElementById('buy-with-shake-wallet');
+        const shakeMessage = document.getElementById('shake-wallet-message');
+        const proofElement = document.getElementById('listing-proof-json');
+        const listingName = {{ listing.name | tojson }};
+
+        if (!shakeButton || !shakeMessage || !proofElement) return;
+
+        function showShakeMessage(message, tone = 'info') {
+          const toneClasses = {
+            info: 'border-gray-200 bg-gray-50 text-gray-800',
+            success: 'border-green-200 bg-green-50 text-green-900',
+            warning: 'border-amber-200 bg-amber-50 text-amber-900',
+            error: 'border-red-200 bg-red-50 text-red-900',
+          };
+
+          shakeMessage.className = `mx-auto mt-4 max-w-xl rounded-md border p-4 text-left text-sm ${toneClasses[tone] || toneClasses.info}`;
+          shakeMessage.textContent = message;
+        }
+
+        shakeButton.addEventListener('click', async () => {
+          if (!window.shake || typeof window.shake.connect !== 'function') {
+            showShakeMessage('Shake Wallet extension was not detected in this browser. Install or enable the Chrome extension, then refresh this page.', 'warning');
+            return;
+          }
+
+          try {
+            const wallet = await window.shake.connect();
+            const capabilities = typeof wallet.getCapabilities === 'function'
+              ? await wallet.getCapabilities()
+              : {};
+
+            if (!capabilities.shakedexFill || typeof wallet.fillShakedexAuction !== 'function') {
+              showShakeMessage('Shake Wallet extension is detected, but this build does not support Shakedex buying yet. Reload the latest extension build, or use Bob Wallet Desktop.', 'info');
+              return;
+            }
+
+            shakeButton.disabled = true;
+            shakeButton.textContent = 'Waiting for Shake Wallet...';
+
+            const proof = JSON.parse(proofElement.textContent);
+            const fulfillment = await wallet.fillShakedexAuction(proof);
+
+            if (!fulfillment || !fulfillment.fulfillmentTxHash) {
+              throw new Error('Shake Wallet did not return a purchase transaction hash.');
+            }
+
+            await fetch(`/api/v2/listings/${encodeURIComponent(listingName)}/refresh-status`, {
+              method: 'POST',
+              headers: {'content-type': 'application/json'},
+              body: JSON.stringify({saleTxHash: fulfillment.fulfillmentTxHash}),
+            });
+
+            showShakeMessage(`Purchase transaction accepted: ${fulfillment.fulfillmentTxHash}`, 'success');
+          } catch (err) {
+            showShakeMessage(err && err.message ? err.message : 'Shake Wallet purchase could not be started.', 'error');
+          } finally {
+            shakeButton.disabled = false;
+            shakeButton.textContent = 'Buy with Shake Wallet Extension';
+          }
+        });
+      })();
+    </script>
     {% else %}
     <div class="mt-8 rounded-md border border-gray-200 bg-gray-50 p-4 text-gray-700">
         {% if listing_display_status == 'expired' %}
