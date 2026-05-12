@@ -50,6 +50,12 @@ def upload():
 def docs():
     return render_template('docs.html')
 
+
+@main_bp.route('/admin')
+def admin():
+    return render_template('admin.html')
+
+
 @main_bp.route('/status')
 def status():
     status_data, _ = get_hsd_status_payload()

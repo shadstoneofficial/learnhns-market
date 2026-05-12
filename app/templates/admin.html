@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Import - LearnHNS Market{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <div class="bg-white rounded-lg shadow p-8">
+    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
+      <div>
+        <h1 class="text-4xl font-bold text-gray-900 mb-3">Admin Import</h1>
+        <p class="text-lg text-gray-600">Import community-observed Handshake names for the expiring-name watcher.</p>
+      </div>
+      <a href="{{ url_for('main.status') }}" class="inline-flex justify-center px-5 py-3 border border-blue-600 text-blue-600 rounded-lg font-semibold hover:bg-blue-50">View Status</a>
+    </div>
+
+    <div id="token-step" class="space-y-4">
+      <label class="block">
+        <span class="block text-sm font-semibold text-gray-800 mb-2">Admin API Key</span>
+        <input id="admin-token" type="password" autocomplete="off" class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Paste MARKET_ADMIN_TOKEN">
+      </label>
+      <div class="flex flex-wrap gap-3">
+        <button id="continue-btn" class="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">Continue</button>
+        <button id="forget-btn" class="px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50">Forget Saved Key</button>
+      </div>
+      <p class="text-sm text-gray-500">The key is stored only in this browser session/local storage. It is sent as <code>X-Market-Admin-Token</code> to the admin import API.</p>
+    </div>
+
+    <div id="result" class="hidden rounded-lg border p-4 text-sm whitespace-pre-wrap mb-6"></div>
+
+    <div id="import-step" class="hidden space-y-6">
+      <div class="p-4 rounded-lg bg-blue-50 border border-blue-100 text-blue-900">
+        Accepted formats: one name per line, comma-separated CSV, or JSON such as <code>["alpha", "beta"]</code> or <code>{"names": ["alpha"]}</code>. Use root names only, without trailing slash or dot.
+      </div>
+
+      <label class="block">
+        <span class="block text-sm font-semibold text-gray-800 mb-2">Upload Names File</span>
+        <input id="names-file" type="file" accept=".txt,.csv,.json,application/json,text/plain,text/csv" class="block w-full text-gray-700">
+      </label>
+
+      <label class="block">
+        <span class="block text-sm font-semibold text-gray-800 mb-2">Or Paste Names</span>
+        <textarea id="names-text" rows="10" class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm" placeholder="booger
+example
+alpha42"></textarea>
+      </label>
+
+      <label class="flex items-center gap-3 text-gray-700">
+        <input id="refresh-now" type="checkbox" checked class="w-5 h-5">
+        <span>Refresh expiry data from HSD now for this batch, up to the API limit.</span>
+      </label>
+
+      <div class="flex flex-wrap gap-3">
+        <button id="import-btn" class="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700">Import Names</button>
+        <button id="clear-btn" class="px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50">Clear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const storageKey = 'learnhns_market_admin_token';
+  const tokenStep = document.getElementById('token-step');
+  const importStep = document.getElementById('import-step');
+  const tokenInput = document.getElementById('admin-token');
+  const fileInput = document.getElementById('names-file');
+  const textInput = document.getElementById('names-text');
+  const refreshInput = document.getElementById('refresh-now');
+  const result = document.getElementById('result');
+
+  tokenInput.value = window.localStorage.getItem(storageKey) || '';
+  if (tokenInput.value) showImportStep();
+
+  document.getElementById('continue-btn').addEventListener('click', () => {
+    const token = tokenInput.value.trim();
+    if (!token) return showResult('Please enter the admin API key.', false);
+    window.localStorage.setItem(storageKey, token);
+    showImportStep();
+  });
+
+  document.getElementById('forget-btn').addEventListener('click', () => {
+    window.localStorage.removeItem(storageKey);
+    tokenInput.value = '';
+    importStep.classList.add('hidden');
+    showResult('Saved admin key cleared.', true);
+  });
+
+  document.getElementById('clear-btn').addEventListener('click', () => {
+    fileInput.value = '';
+    textInput.value = '';
+    result.classList.add('hidden');
+  });
+
+  document.getElementById('import-btn').addEventListener('click', async () => {
+    const token = tokenInput.value.trim() || window.localStorage.getItem(storageKey) || '';
+    if (!token) return showResult('Please enter the admin API key first.', false);
+
+    const file = fileInput.files && fileInput.files[0];
+    const rawText = file ? await file.text() : textInput.value;
+    if (!rawText.trim()) return showResult('Please upload a file or paste names first.', false);
+
+    const payload = buildPayload(rawText);
+    payload.refresh = refreshInput.checked;
+
+    showResult('Importing names...', true);
+    try {
+      const res = await fetch('/api/v2/expiring-names/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Market-Admin-Token': token,
+        },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Import failed with ${res.status}`);
+      showResult(formatImportResult(body), true);
+    } catch (err) {
+      showResult(err.message, false);
+    }
+  });
+
+  function showImportStep() {
+    tokenStep.classList.add('hidden');
+    importStep.classList.remove('hidden');
+    result.classList.add('hidden');
+  }
+
+  function buildPayload(rawText) {
+    try {
+      const parsed = JSON.parse(rawText);
+      if (Array.isArray(parsed)) return { names: parsed };
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch (_) {}
+    return { text: rawText };
+  }
+
+  function formatImportResult(body) {
+    const lines = [
+      `Imported: ${body.accepted || 0} accepted`,
+      `Inserted: ${body.inserted || 0}`,
+      `Updated: ${body.updated || 0}`,
+      `Deduped: ${body.deduped || 0}`,
+      `Rejected: ${(body.rejected || []).length}`,
+    ];
+    if (body.truncated) lines.push('Input was truncated at the configured import limit.');
+    if (body.refresh) lines.push(`Refresh checked: ${body.refresh.count || 0}, chain height: ${body.refresh.chainHeight || 'unknown'}`);
+    if (body.rejected && body.rejected.length) {
+      lines.push('', 'Rejected names:');
+      body.rejected.slice(0, 25).forEach((item) => lines.push(`- ${item.name || '(empty)'}: ${item.reason}`));
+    }
+    return lines.join('\n');
+  }
+
+  function showResult(message, ok) {
+    result.className = `rounded-lg border p-4 text-sm whitespace-pre-wrap ${ok ? 'bg-green-50 border-green-200 text-green-900' : 'bg-red-50 border-red-200 text-red-900'}`;
+    result.textContent = message;
+    result.classList.remove('hidden');
+  }
+})();
+</script>
+{% endblock %}

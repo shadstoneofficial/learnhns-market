@@ -13,6 +13,7 @@ from app.utils import (
 )
 import os
 import json
+import re
 from datetime import datetime, timedelta
 from urllib.parse import urljoin
 
@@ -518,21 +519,159 @@ def _observed_market_names(limit):
     return names
 
 
+def _community_expiring_watch_names(limit, network='main'):
+    rows = (
+        ExpiringNameWatch.query
+        .filter_by(network=network, source='community-import')
+        .order_by(
+            ExpiringNameWatch.blocks_until_expire.is_(None),
+            ExpiringNameWatch.blocks_until_expire.asc(),
+            ExpiringNameWatch.name.asc(),
+        )
+        .limit(limit)
+        .all()
+    )
+    return [row.name for row in rows]
+
+
+def _expiring_source_counts(network='main'):
+    rows = ExpiringNameWatch.query.filter_by(network=network).all()
+    counts = {}
+    imported_count = 0
+    refreshed_count = 0
+    not_found_count = 0
+    last_import_at = None
+    last_refresh_at = None
+
+    for row in rows:
+        source = row.source or 'unknown'
+        counts[source] = counts.get(source, 0) + 1
+        if source == 'community-import':
+            imported_count += 1
+            if row.created_at and (last_import_at is None or row.created_at > last_import_at):
+                last_import_at = row.created_at
+        if row.last_checked_at:
+            refreshed_count += 1
+            if last_refresh_at is None or row.last_checked_at > last_refresh_at:
+                last_refresh_at = row.last_checked_at
+        if row.found is False:
+            not_found_count += 1
+
+    return {
+        "sourceCounts": counts,
+        "importedCount": imported_count,
+        "refreshedCount": refreshed_count,
+        "notFoundCount": not_found_count,
+        "lastImportAt": last_import_at.isoformat() if last_import_at else None,
+        "lastRefreshAt": last_refresh_at.isoformat() if last_refresh_at else None,
+    }
+
+
+def _merge_expiring_name_lists(limit, *name_lists):
+    names = []
+    seen = set()
+    for name_list in name_lists:
+        for name in name_list:
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+            if len(names) >= limit:
+                return names
+    return names
+
+
 def _require_market_admin():
     token = current_app.config.get('MARKET_ADMIN_TOKEN')
     if not token:
         return None
 
+    body = request.get_json(silent=True)
     submitted = (
         request.headers.get('X-Market-Admin-Token')
         or request.args.get('adminToken')
-        or (request.get_json(silent=True) or {}).get('adminToken')
+        or (body.get('adminToken') if isinstance(body, dict) else None)
     )
     if submitted != token:
         return jsonify({"error": "Admin token is required"}), 401
 
     return None
 
+
+
+HANDSHAKE_IMPORT_NAME_RE = re.compile(r'^[a-z0-9-]{1,63}$')
+EXPIRING_IMPORT_MAX_NAMES = 1000
+EXPIRING_IMPORT_REFRESH_MAX_NAMES = 100
+EXPIRING_IMPORT_SKIP_TOKENS = {'name', 'names', 'domain', 'domains', 'tld', 'tlds'}
+
+
+def _normalize_expiring_import_name(raw_name):
+    if raw_name is None:
+        return None, 'empty name'
+
+    name = str(raw_name).strip().lower().rstrip('/').strip()
+    if name in EXPIRING_IMPORT_SKIP_TOKENS:
+        return None, 'header token'
+    if not name:
+        return None, 'empty name'
+    if '/' in name or '.' in name or any(char.isspace() for char in name):
+        return None, 'use root name only, without slash, dot, or spaces'
+    if not HANDSHAKE_IMPORT_NAME_RE.match(name):
+        return None, 'name must be 1-63 lowercase letters, numbers, or hyphens'
+
+    return name, None
+
+
+def _split_expiring_import_text(text):
+    if not text:
+        return []
+    return [token for token in re.split(r'[\s,;]+', text) if token]
+
+
+def _expiring_import_values_from_request(data):
+    if isinstance(data, list):
+        return data
+
+    if isinstance(data, dict):
+        raw_names = data.get('names', data.get('domains'))
+        if isinstance(raw_names, list):
+            return raw_names
+        if isinstance(raw_names, str):
+            return _split_expiring_import_text(raw_names)
+
+        raw_text = data.get('text', data.get('csv'))
+        if isinstance(raw_text, str):
+            return _split_expiring_import_text(raw_text)
+
+        raw_name = data.get('name', data.get('domain'))
+        if raw_name:
+            return [raw_name]
+
+    raw_body = request.get_data(as_text=True) or ''
+    return _split_expiring_import_text(raw_body)
+
+
+def _refresh_named_expiring_watches(names, source='community-import', network='main', limit=EXPIRING_IMPORT_REFRESH_MAX_NAMES):
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+    refreshed = []
+
+    for name in names[:limit]:
+        payload = _expiring_name_payload(name, chain_height)
+        watch = _store_expiring_watch(
+            payload,
+            chain_height=chain_height,
+            network=network,
+            source=source,
+        )
+        refreshed.append(_expiring_watch_payload(watch))
+
+    db.session.commit()
+    return {
+        "count": len(refreshed),
+        "chainHeight": chain_height,
+        "names": refreshed,
+    }
 
 def _expiring_name_payload(name, chain_height=None):
     info, error = _fetch_hsd_name_info(name)
@@ -712,10 +851,16 @@ def _cached_global_expiring_names(limit, network='main'):
 
 
 def _cached_expiring_watches(limit, network='main'):
+    return _cached_expiring_watches_for_sources(limit, network=network)
+
+
+def _cached_expiring_watches_for_sources(limit, sources=None, network='main'):
+    query = ExpiringNameWatch.query.filter_by(network=network)
+    if sources:
+        query = query.filter(ExpiringNameWatch.source.in_(sources))
+
     rows = (
-        ExpiringNameWatch.query
-        .filter_by(network=network)
-        .order_by(
+        query.order_by(
             ExpiringNameWatch.blocks_until_expire.is_(None),
             ExpiringNameWatch.blocks_until_expire.asc(),
             ExpiringNameWatch.name.asc(),
@@ -1124,9 +1269,19 @@ def expiring_names():
     raw_names = request.args.get('names', '')
     requested_scope = request.args.get('scope', '').strip().lower()
     refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes'}
+    network = request.args.get('network', 'main').strip().lower() or 'main'
     if requested_scope == 'global':
         names = []
         scope = 'global'
+    elif requested_scope in {'community', 'community-observed', 'community-import'}:
+        names = _community_expiring_watch_names(limit, network=network)
+        scope = 'community-observed'
+    elif requested_scope in {'observed', 'combined'}:
+        market_names = _observed_market_names(limit)
+        community_names = _community_expiring_watch_names(limit, network=network)
+        names = _merge_expiring_name_lists(limit, market_names, community_names)
+        scope = 'observed'
+        _seed_expiring_watches(market_names, network=network)
     elif raw_names:
         names = []
         seen = set()
@@ -1140,9 +1295,10 @@ def expiring_names():
                 break
         scope = 'requested'
     else:
-        names = _observed_market_names(limit)
+        market_names = _observed_market_names(limit)
+        names = market_names
         scope = 'channel-observed'
-        _seed_expiring_watches(names)
+        _seed_expiring_watches(market_names, network=network)
 
     chain_payload, chain_status = get_hsd_status_payload()
     chain = chain_payload.get('chain', {}) if chain_status == 200 else {}
@@ -1156,16 +1312,29 @@ def expiring_names():
     elif scope == 'requested' or refresh:
         for name in names:
             payload = _expiring_name_payload(name, chain_height)
+            source = 'requested' if scope == 'requested' else 'market-observed'
+            if scope != 'requested':
+                existing_watch = ExpiringNameWatch.query.filter_by(
+                    name=name,
+                    network=network,
+                ).first()
+                if existing_watch and existing_watch.source:
+                    source = existing_watch.source
             watch = _store_expiring_watch(
                 payload,
                 chain_height=chain_height,
-                source='requested' if scope == 'requested' else 'market-observed',
+                network=network,
+                source=source,
             )
             rows.append(_expiring_watch_payload(watch))
 
         db.session.commit()
+    elif scope == 'community-observed':
+        rows = _cached_expiring_watches_for_sources(limit, sources=['community-import'], network=network)
+    elif scope == 'channel-observed':
+        rows = _cached_expiring_watches_for_sources(limit, sources=['market-observed'], network=network)
     else:
-        rows = _cached_expiring_watches(limit)
+        rows = _cached_expiring_watches(limit, network=network)
 
     rows.sort(key=lambda row: (
         row.get('blocksUntilExpire') is None,
@@ -1184,6 +1353,7 @@ def expiring_names():
             else "Full global discovery needs the name-state indexer to finish before this feed is complete."
         ),
         "indexer": indexer_status,
+        **_expiring_source_counts(network=network),
         "node": {
             "reachable": chain_payload.get('reachable', False),
             "height": chain_height,
@@ -1209,6 +1379,108 @@ def expiring_names_indexer_status():
             "progress": chain_payload.get('progress'),
             "spv": ((chain.get('options') or {}).get('spv') if isinstance(chain, dict) else None),
         },
+    })
+
+
+
+@api_bp.route('/v2/expiring-names/import', methods=['POST'])
+@limiter.limit("10 per hour")
+def import_expiring_names():
+    if not current_app.config.get('MARKET_ADMIN_TOKEN'):
+        return jsonify({"error": "MARKET_ADMIN_TOKEN must be configured for imports"}), 503
+
+    auth_error = _require_market_admin()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json(silent=True)
+    raw_values = _expiring_import_values_from_request(data)
+    if not raw_values:
+        return jsonify({"error": "Provide names as JSON, newline text, or CSV text"}), 400
+
+    network = 'main'
+    source = 'community-import'
+    refresh_now = str(
+        (data or {}).get('refresh', request.args.get('refresh', 'false'))
+        if isinstance(data, dict)
+        else request.args.get('refresh', 'false')
+    ).lower() in {'1', 'true', 'yes'}
+
+    accepted = []
+    seen = set()
+    rejected = []
+    truncated = False
+
+    for raw_name in raw_values:
+        if len(accepted) >= EXPIRING_IMPORT_MAX_NAMES:
+            truncated = True
+            break
+
+        name, reason = _normalize_expiring_import_name(raw_name)
+        if reason:
+            if reason != 'header token':
+                rejected.append({"name": str(raw_name), "reason": reason})
+            continue
+        if name in seen:
+            continue
+        seen.add(name)
+        accepted.append(name)
+
+    if not accepted:
+        return jsonify({
+            "error": "No valid names found",
+            "rejected": rejected,
+        }), 400
+
+    inserted = 0
+    updated = 0
+    deduped = 0
+    for name in accepted:
+        watch = ExpiringNameWatch.query.filter_by(name=name, network=network).first()
+        if watch is None:
+            db.session.add(ExpiringNameWatch(name=name, network=network, source=source))
+            inserted += 1
+            continue
+
+        if watch.source in {None, '', 'requested'}:
+            watch.source = source
+            watch.updated_at = datetime.utcnow()
+            db.session.add(watch)
+            updated += 1
+        else:
+            deduped += 1
+
+    db.session.commit()
+
+    refresh_result = None
+    if refresh_now:
+        refresh_result = _refresh_named_expiring_watches(
+            accepted,
+            source=source,
+            network=network,
+        )
+
+    rows = (
+        ExpiringNameWatch.query
+        .filter(ExpiringNameWatch.network == network, ExpiringNameWatch.name.in_(accepted))
+        .order_by(ExpiringNameWatch.name.asc())
+        .all()
+    )
+
+    return jsonify({
+        "success": True,
+        "scope": "community-observed",
+        "source": source,
+        "network": network,
+        "received": len(raw_values),
+        "accepted": len(accepted),
+        "inserted": inserted,
+        "updated": updated,
+        "deduped": deduped,
+        "rejected": rejected,
+        "truncated": truncated,
+        "refresh": refresh_result,
+        "names": [_expiring_watch_payload(row) for row in rows],
     })
 
 
