@@ -120,7 +120,12 @@ def listing_detail(name):
 
 @main_bp.route('/listing/<name>/proof.json')
 def listing_proof(name):
-    listing = Listing.query.filter_by(name=name, status='active').first_or_404()
+    listing = (
+        Listing.query
+        .filter_by(name=name, status='active')
+        .order_by(Listing.created_at.desc())
+        .first_or_404()
+    )
     return jsonify(listing.proof_json)
 
 
