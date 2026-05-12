@@ -17,6 +17,15 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
+NAME_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+NAME_HASH_COVENANT_ACTIONS = {"CLAIM", "REVEAL", "REGISTER", "RENEW", "FINALIZE"}
+NAME_HASH_COVENANT_TYPES = {
+    1: "CLAIM",
+    4: "REVEAL",
+    6: "REGISTER",
+    8: "RENEW",
+    10: "FINALIZE",
+}
 
 create_app = None
 db = None
@@ -103,6 +112,41 @@ def _decode_covenant_item(value):
     return _normalize_name(text)
 
 
+def _decode_covenant_item_hex(value):
+    if isinstance(value, dict) and isinstance(value.get("data"), list):
+        try:
+            value = bytes(value["data"]).hex()
+        except (TypeError, ValueError):
+            return None
+
+    if not isinstance(value, str):
+        return None
+
+    value = value.strip().lower()
+    if value.startswith("0x"):
+        value = value[2:]
+
+    if not NAME_HASH_RE.match(value):
+        return None
+
+    return value
+
+
+def _covenant_action(covenant):
+    if not isinstance(covenant, dict):
+        return None
+
+    action = covenant.get("action")
+    if isinstance(action, str):
+        return action.upper()
+
+    covenant_type = covenant.get("type")
+    if isinstance(covenant_type, int):
+        return NAME_HASH_COVENANT_TYPES.get(covenant_type)
+
+    return None
+
+
 def _names_from_covenant(covenant):
     if not isinstance(covenant, dict):
         return set()
@@ -119,6 +163,18 @@ def _names_from_covenant(covenant):
             names.add(name)
 
     return names
+
+
+def _name_hashes_from_covenant(covenant):
+    if _covenant_action(covenant) not in NAME_HASH_COVENANT_ACTIONS:
+        return set()
+
+    items = covenant.get("items") or []
+    if not items:
+        return set()
+
+    name_hash = _decode_covenant_item_hex(items[0])
+    return {name_hash} if name_hash else set()
 
 
 def _extract_names_from_tx(tx):
@@ -141,6 +197,35 @@ def _extract_names_from_tx(tx):
             names.update(_names_from_covenant(script.get("covenant")))
 
     return names
+
+
+def _extract_name_hashes_from_tx(tx):
+    if not isinstance(tx, dict):
+        return set()
+
+    hashes = set()
+    sections = []
+    for key in ("outputs", "vout"):
+        values = tx.get(key)
+        if isinstance(values, list):
+            sections.extend(values)
+
+    for entry in sections:
+        if not isinstance(entry, dict):
+            continue
+        hashes.update(_name_hashes_from_covenant(entry.get("covenant")))
+        script = entry.get("scriptPubKey")
+        if isinstance(script, dict):
+            hashes.update(_name_hashes_from_covenant(script.get("covenant")))
+
+    return hashes
+
+
+def _name_from_hash(name_hash):
+    name, error = _hsd_rpc_request("getnamebyhash", [name_hash, True])
+    if error or not isinstance(name, str):
+        return None
+    return _normalize_name(name)
 
 
 def _get_chain_height():
@@ -200,9 +285,17 @@ def _fetch_tx_if_needed(entry):
 
 def _names_from_block(block):
     names = set()
+    name_hashes = set()
     for entry in _tx_entries(block):
         tx = _fetch_tx_if_needed(entry)
         names.update(_extract_names_from_tx(tx))
+        name_hashes.update(_extract_name_hashes_from_tx(tx))
+
+    for name_hash in name_hashes:
+        name = _name_from_hash(name_hash)
+        if name:
+            names.add(name)
+
     return sorted(names)
 
 
@@ -233,6 +326,8 @@ def _bootstrap(network, height):
 def _record_name(name, height, network, dry_run=False):
     payload = _expiring_name_payload(name, chain_height=height)
     if not payload.get("found"):
+        return None
+    if not isinstance(payload.get("blocksUntilExpire"), int):
         return None
 
     if dry_run:
