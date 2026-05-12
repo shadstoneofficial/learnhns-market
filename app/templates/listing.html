@@ -69,11 +69,12 @@
         {% endif %}
         <div class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Choose your wallet</div>
         <div class="flex flex-col justify-center gap-3 sm:flex-row">
-            <a href="{{ bob_deep_link }}"
-               data-shake-wallet-ignore="true"
-               class="inline-block w-full sm:w-auto bg-indigo-600 text-white text-lg font-bold px-8 py-4 rounded-lg shadow-md hover:bg-indigo-700 transition transform hover:-translate-y-0.5">
+            <button type="button"
+                    id="buy-with-bob-wallet-desktop"
+                    data-bob-wallet-link="{{ bob_deep_link }}"
+                    class="inline-block w-full sm:w-auto bg-indigo-600 text-white text-lg font-bold px-8 py-4 rounded-lg shadow-md hover:bg-indigo-700 transition transform hover:-translate-y-0.5">
                 Buy with Bob Wallet Desktop
-            </a>
+            </button>
             <button type="button"
                     id="buy-with-shake-wallet"
                     class="inline-block w-full sm:w-auto bg-gray-900 text-white text-lg font-bold px-8 py-4 rounded-lg shadow-md hover:bg-gray-800 transition transform hover:-translate-y-0.5">
@@ -96,12 +97,13 @@
     <script id="listing-proof-json" type="application/json">{{ listing.proof_json | tojson }}</script>
     <script>
       (() => {
+        const bobButton = document.getElementById('buy-with-bob-wallet-desktop');
         const shakeButton = document.getElementById('buy-with-shake-wallet');
         const shakeMessage = document.getElementById('shake-wallet-message');
         const proofElement = document.getElementById('listing-proof-json');
         const listingName = {{ listing.name | tojson }};
 
-        if (!shakeButton || !shakeMessage || !proofElement) return;
+        if (!bobButton || !shakeButton || !shakeMessage || !proofElement) return;
 
         function showShakeMessage(message, tone = 'info') {
           const toneClasses = {
@@ -114,6 +116,16 @@
           shakeMessage.className = `mx-auto mt-4 max-w-xl rounded-md border p-4 text-left text-sm ${toneClasses[tone] || toneClasses.info}`;
           shakeMessage.textContent = message;
         }
+
+        bobButton.addEventListener('click', () => {
+          const bobLink = bobButton.getAttribute('data-bob-wallet-link');
+          if (!bobLink) {
+            showShakeMessage('Bob Wallet desktop link is missing for this listing.', 'error');
+            return;
+          }
+
+          window.location.href = bobLink;
+        });
 
         shakeButton.addEventListener('click', async () => {
           if (!window.shake || typeof window.shake.connect !== 'function') {
