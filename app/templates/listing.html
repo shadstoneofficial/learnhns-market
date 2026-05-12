@@ -26,7 +26,7 @@
     <div class="bg-gray-50 p-5 rounded-lg mb-8 text-sm text-gray-600 border border-gray-200 shadow-inner">
         <p class="mb-2"><strong class="text-gray-800">Status:</strong> {{ listing_display_status }}</p>
         <p class="mb-2"><strong class="text-gray-800">Price:</strong> {{ listing.price_hns }} HNS</p>
-        <p class="mb-2"><strong class="text-gray-800">Seller HNS Address:</strong> <span class="font-mono">{{ listing.seller_hns_address }}</span></p>
+        <p class="mb-2"><strong class="text-gray-800">Seller HNS Address:</strong> <span class="font-mono break-all">{{ listing.seller_hns_address }}</span></p>
         <p><strong class="text-gray-800">Listed On:</strong> {{ listing.created_at.strftime('%Y-%m-%d') }}</p>
         {% if listing_expires_at %}
             <p class="mt-2">
@@ -74,7 +74,14 @@
         <div class="mt-4">
             <a href="{{ url_for('main.listing_proof', name=listing.name) }}" class="text-sm text-indigo-600 hover:underline">Download proof JSON</a>
         </div>
-        <p class="text-sm text-gray-500 mt-3">Opens Bob Wallet directly. If the app does not open, download the proof JSON and load it in Bob Wallet.</p>
+        <div class="mx-auto mt-4 max-w-xl rounded-md border border-indigo-100 bg-indigo-50 p-4 text-left text-sm text-indigo-900">
+            <p class="font-semibold">Requires the May 2026 experimental Bob Wallet build.</p>
+            <p class="mt-1">
+                Stable Bob Wallet does not open LearnHNS Market buy links yet.
+                <a href="https://bobwallet.org/download" target="_blank" rel="noopener noreferrer" class="font-semibold underline hover:text-indigo-700">Download Bob Wallet</a>
+                and choose the experimental build before buying.
+            </p>
+        </div>
     </div>
     {% else %}
     <div class="mt-8 rounded-md border border-gray-200 bg-gray-50 p-4 text-gray-700">
