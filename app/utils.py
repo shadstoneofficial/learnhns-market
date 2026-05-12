@@ -119,10 +119,14 @@ def validate_shakedex_proof(proof_data: dict) -> tuple[bool, str]:
             return False, "Invalid fixed price"
         if not isinstance(bid['lockTime'], int) or bid['lockTime'] < 0:
             return False, "Invalid lock time"
+        if bid['lockTime'] > int(datetime.utcnow().timestamp()) + 7200:
+            return False, "Fixed-price bid lock time is in the future. Create a new proof with the current MTP as the bid lockTime and use expiresAt for listing expiration."
         if not _is_hex(bid['signature'], 130):
             return False, "Invalid proof signature"
         if 'fee' in bid and (not isinstance(bid['fee'], int) or bid['fee'] < 0):
             return False, "Invalid fee"
+        if 'expiresAt' in proof_data and (not isinstance(proof_data['expiresAt'], int) or proof_data['expiresAt'] <= 0):
+            return False, "Invalid listing expiration"
 
         return True, "Valid"
     except Exception as e:
@@ -131,9 +135,9 @@ def validate_shakedex_proof(proof_data: dict) -> tuple[bool, str]:
 def fixed_price_listing_fields(proof_data: dict) -> dict:
     bid = proof_data['data'][0]
     expires_at = None
-    lock_time = bid.get('lockTime')
-    if isinstance(lock_time, int) and lock_time > 0:
-        expires_at = datetime.utcfromtimestamp(lock_time)
+    expires_at_timestamp = proof_data.get('expiresAt')
+    if isinstance(expires_at_timestamp, int) and expires_at_timestamp > 0:
+        expires_at = datetime.utcfromtimestamp(expires_at_timestamp)
 
     return {
         'name': proof_data['name'],
