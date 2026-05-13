@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import requests
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from app.models import db, ExpiringNameWatch, GlobalNameState, Listing, NameIndexerProgress, PendingListing
 from app.utils import (
@@ -835,25 +836,51 @@ def _name_indexer_status_payload(network='main'):
     }
 
 
-def _cached_global_expiring_names(limit, network='main'):
-    rows = (
-        GlobalNameState.query
-        .filter_by(network=network)
-        .order_by(
+def _global_name_status_query(query, status):
+    if status == 'expired':
+        return query.filter(or_(
+            GlobalNameState.expired.is_(True),
+            GlobalNameState.blocks_until_expire <= 0,
+        ))
+    if status == 'all':
+        return query
+    return query.filter(
+        GlobalNameState.expired.is_(False),
+        GlobalNameState.blocks_until_expire.isnot(None),
+        GlobalNameState.blocks_until_expire > 0,
+    )
+
+
+def _global_name_status_order(status):
+    if status == 'expired':
+        return (
             GlobalNameState.blocks_until_expire.is_(None),
-            GlobalNameState.blocks_until_expire.asc(),
+            GlobalNameState.blocks_until_expire.desc(),
             GlobalNameState.name.asc(),
         )
-        .limit(limit)
-        .all()
+    return (
+        GlobalNameState.blocks_until_expire.is_(None),
+        GlobalNameState.blocks_until_expire.asc(),
+        GlobalNameState.name.asc(),
     )
+
+
+def _cached_global_expiring_names(limit, network='main', status='active'):
+    query = _global_name_status_query(
+        GlobalNameState.query.filter_by(network=network),
+        status,
+    )
+    rows = query.order_by(*_global_name_status_order(status)).limit(limit).all()
     return [_global_name_payload(row) for row in rows]
 
 
-def _refresh_global_expiring_names(limit=100, stale_only=True, network='main'):
+def _refresh_global_expiring_names(limit=100, stale_only=True, network='main', status='active'):
     refresh_minutes = current_app.config.get('EXPIRING_GLOBAL_REFRESH_MINUTES', 60)
     cutoff = datetime.utcnow() - timedelta(minutes=refresh_minutes)
-    query = GlobalNameState.query.filter_by(network=network)
+    query = _global_name_status_query(
+        GlobalNameState.query.filter_by(network=network),
+        status,
+    )
     if stale_only:
         query = query.filter(
             (GlobalNameState.last_checked_at.is_(None))
@@ -862,11 +889,7 @@ def _refresh_global_expiring_names(limit=100, stale_only=True, network='main'):
 
     rows = (
         query
-        .order_by(
-            GlobalNameState.blocks_until_expire.is_(None),
-            GlobalNameState.blocks_until_expire.asc(),
-            GlobalNameState.name.asc(),
-        )
+        .order_by(*_global_name_status_order(status))
         .limit(limit)
         .all()
     )
@@ -915,7 +938,7 @@ def _global_rows_are_fresh(rows, network='main'):
     return all(row.get('lastCheckedAt') and datetime.fromisoformat(row['lastCheckedAt']) >= cutoff for row in rows)
 
 
-def _refresh_global_expiring_window(limit=100, network='main'):
+def _refresh_global_expiring_window(limit=100, network='main', status='active'):
     refresh_limit = min(max(limit * 25, 50), 500)
     result = {
         "refreshed": 0,
@@ -928,6 +951,7 @@ def _refresh_global_expiring_window(limit=100, network='main'):
             limit=refresh_limit,
             stale_only=True,
             network=network,
+            status=status,
         )
         result["refreshed"] += batch.get("refreshed", 0)
         result["removed"] += batch.get("removed", 0)
@@ -936,7 +960,7 @@ def _refresh_global_expiring_window(limit=100, network='main'):
         if batch.get("refreshed", 0) == 0 and batch.get("removed", 0) == 0:
             break
 
-        rows = _cached_global_expiring_names(limit, network=network)
+        rows = _cached_global_expiring_names(limit, network=network, status=status)
         if _global_rows_are_fresh(rows, network=network):
             break
 
@@ -1361,8 +1385,14 @@ def expiring_names():
 
     raw_names = request.args.get('names', '')
     requested_scope = request.args.get('scope', '').strip().lower()
+    requested_status = request.args.get('status', 'active').strip().lower()
     refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes'}
     network = request.args.get('network', 'main').strip().lower() or 'main'
+    if requested_status == 'future':
+        requested_status = 'active'
+    if requested_status not in {'active', 'expired', 'all'}:
+        return jsonify({"error": "status must be active, expired, all, or future"}), 400
+
     if requested_scope == 'global':
         names = []
         scope = 'global'
@@ -1401,8 +1431,8 @@ def expiring_names():
     indexer_status = _name_indexer_status_payload()
 
     if scope == 'global':
-        _refresh_global_expiring_window(limit=limit, network=network)
-        rows = _cached_global_expiring_names(limit)
+        _refresh_global_expiring_window(limit=limit, network=network, status=requested_status)
+        rows = _cached_global_expiring_names(limit, network=network, status=requested_status)
     elif scope == 'requested' or refresh:
         for name in names:
             payload = _expiring_name_payload(name, chain_height)
@@ -1430,14 +1460,22 @@ def expiring_names():
     else:
         rows = _cached_expiring_watches(limit, network=network)
 
-    rows.sort(key=lambda row: (
-        row.get('blocksUntilExpire') is None,
-        row.get('blocksUntilExpire') if row.get('blocksUntilExpire') is not None else 10**18,
-        row.get('name') or '',
-    ))
+    if scope == 'global' and requested_status == 'expired':
+        rows.sort(key=lambda row: (
+            row.get('blocksUntilExpire') is None,
+            -(row.get('blocksUntilExpire') if row.get('blocksUntilExpire') is not None else -10**18),
+            row.get('name') or '',
+        ))
+    else:
+        rows.sort(key=lambda row: (
+            row.get('blocksUntilExpire') is None,
+            row.get('blocksUntilExpire') if row.get('blocksUntilExpire') is not None else 10**18,
+            row.get('name') or '',
+        ))
 
     return jsonify({
         "scope": scope,
+        "status": requested_status if scope == 'global' else None,
         "global": scope == 'global' and indexer_status.get('ready', False),
         "globalReason": (
             "Forward-only global discovery is active from the recorded index height. It does not include historical names before the watcher started."
