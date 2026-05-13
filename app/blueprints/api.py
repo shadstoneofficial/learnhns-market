@@ -850,6 +850,65 @@ def _cached_global_expiring_names(limit, network='main'):
     return [_global_name_payload(row) for row in rows]
 
 
+def _refresh_global_expiring_names(limit=100, stale_only=True, network='main'):
+    refresh_minutes = current_app.config.get('EXPIRING_GLOBAL_REFRESH_MINUTES', 60)
+    cutoff = datetime.utcnow() - timedelta(minutes=refresh_minutes)
+    query = GlobalNameState.query.filter_by(network=network)
+    if stale_only:
+        query = query.filter(
+            (GlobalNameState.last_checked_at.is_(None))
+            | (GlobalNameState.last_checked_at < cutoff)
+        )
+
+    rows = (
+        query
+        .order_by(
+            GlobalNameState.blocks_until_expire.is_(None),
+            GlobalNameState.blocks_until_expire.asc(),
+            GlobalNameState.name.asc(),
+        )
+        .limit(limit)
+        .all()
+    )
+
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+    if not isinstance(chain_height, int):
+        return {
+            "refreshed": 0,
+            "removed": 0,
+            "node": {
+                "reachable": chain_payload.get('reachable', False),
+                "height": chain_height,
+                "progress": chain_payload.get('progress'),
+            },
+        }
+
+    refreshed = 0
+    removed = 0
+    for row in rows:
+        payload = _expiring_name_payload(row.name, chain_height)
+        if payload.get('found') and isinstance(payload.get('blocksUntilExpire'), int):
+            _store_global_name_state(payload, chain_height=chain_height, network=network)
+            refreshed += 1
+        elif not payload.get('error'):
+            db.session.delete(row)
+            removed += 1
+
+    if rows:
+        db.session.commit()
+
+    return {
+        "refreshed": refreshed,
+        "removed": removed,
+        "node": {
+            "reachable": chain_payload.get('reachable', False),
+            "height": chain_height,
+            "progress": chain_payload.get('progress'),
+        },
+    }
+
+
 def _cached_expiring_watches(limit, network='main'):
     return _cached_expiring_watches_for_sources(limit, network=network)
 
@@ -1308,6 +1367,8 @@ def expiring_names():
     indexer_status = _name_indexer_status_payload()
 
     if scope == 'global':
+        if refresh:
+            _refresh_global_expiring_names(limit=limit, stale_only=True, network=network)
         rows = _cached_global_expiring_names(limit)
     elif scope == 'requested' or refresh:
         for name in names:
