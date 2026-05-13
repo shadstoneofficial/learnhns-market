@@ -909,6 +909,40 @@ def _refresh_global_expiring_names(limit=100, stale_only=True, network='main'):
     }
 
 
+def _global_rows_are_fresh(rows, network='main'):
+    refresh_minutes = current_app.config.get('EXPIRING_GLOBAL_REFRESH_MINUTES', 60)
+    cutoff = datetime.utcnow() - timedelta(minutes=refresh_minutes)
+    return all(row.get('lastCheckedAt') and datetime.fromisoformat(row['lastCheckedAt']) >= cutoff for row in rows)
+
+
+def _refresh_global_expiring_window(limit=100, network='main'):
+    refresh_limit = min(max(limit * 25, 50), 500)
+    result = {
+        "refreshed": 0,
+        "removed": 0,
+        "node": {},
+    }
+
+    for _ in range(5):
+        batch = _refresh_global_expiring_names(
+            limit=refresh_limit,
+            stale_only=True,
+            network=network,
+        )
+        result["refreshed"] += batch.get("refreshed", 0)
+        result["removed"] += batch.get("removed", 0)
+        result["node"] = batch.get("node", {})
+
+        if batch.get("refreshed", 0) == 0 and batch.get("removed", 0) == 0:
+            break
+
+        rows = _cached_global_expiring_names(limit, network=network)
+        if _global_rows_are_fresh(rows, network=network):
+            break
+
+    return result
+
+
 def _cached_expiring_watches(limit, network='main'):
     return _cached_expiring_watches_for_sources(limit, network=network)
 
@@ -1367,8 +1401,7 @@ def expiring_names():
     indexer_status = _name_indexer_status_payload()
 
     if scope == 'global':
-        if refresh:
-            _refresh_global_expiring_names(limit=limit, stale_only=True, network=network)
+        _refresh_global_expiring_window(limit=limit, network=network)
         rows = _cached_global_expiring_names(limit)
     elif scope == 'requested' or refresh:
         for name in names:
