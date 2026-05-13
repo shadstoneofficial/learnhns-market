@@ -337,28 +337,29 @@ def _record_name(name, height, network, dry_run=False):
     return row
 
 
-def run_once(network="main", batch_size=10, start_height=None, dry_run=False):
+def run_once(network="main", batch_size=10, start_height=None, target_height=None, force_start_height=False, dry_run=False):
     current_height = _get_chain_height()
-    if start_height is not None:
-        current_height = max(current_height, start_height)
+    target_height = min(target_height, current_height) if target_height is not None else current_height
 
-    if _bootstrap(network, start_height or current_height):
+    if _bootstrap(network, start_height or target_height):
         return {
             "bootstrapped": True,
             "network": network,
-            "lastIndexedHeight": start_height or current_height,
-            "targetHeight": current_height,
+            "lastIndexedHeight": start_height or target_height,
+            "targetHeight": target_height,
             "blocksProcessed": 0,
             "namesObserved": 0,
             "namesRecorded": 0,
         }
 
     progress = _progress_for(network)
-    if start_height is not None and (progress.last_indexed_height is None or progress.last_indexed_height < start_height - 1):
+    if start_height is not None and force_start_height:
+        progress.last_indexed_height = start_height - 1
+    elif start_height is not None and (progress.last_indexed_height is None or progress.last_indexed_height < start_height - 1):
         progress.last_indexed_height = start_height - 1
 
     start = (progress.last_indexed_height or 0) + 1
-    target = current_height
+    target = target_height
     end = min(target, start + batch_size - 1)
 
     if start > target:
@@ -433,6 +434,8 @@ def main():
     parser.add_argument("--network", default="main")
     parser.add_argument("--batch-size", type=int, default=10)
     parser.add_argument("--start-height", type=int)
+    parser.add_argument("--target-height", type=int)
+    parser.add_argument("--force-start-height", action="store_true", help="Reset stored progress to start-height - 1 before processing.")
     parser.add_argument("--once", action="store_true", help="Run one batch and exit.")
     parser.add_argument("--poll-seconds", type=int, default=60)
     parser.add_argument("--dry-run", action="store_true")
@@ -447,6 +450,8 @@ def main():
                     network=args.network,
                     batch_size=max(args.batch_size, 1),
                     start_height=args.start_height,
+                    target_height=args.target_height,
+                    force_start_height=args.force_start_height,
                     dry_run=args.dry_run,
                 )
                 print(json.dumps(result, indent=2, sort_keys=True, default=_json_default))
