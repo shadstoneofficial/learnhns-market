@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">Account Settings</h1>
+    <p class="text-gray-600">GFAVIP identity and LearnHNS account preferences.</p>
+</div>
+
+<div class="grid gap-6 lg:grid-cols-2">
+    <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 class="mb-4 text-xl font-bold">GFAVIP Account</h2>
+        <dl class="space-y-4 text-sm">
+            <div>
+                <dt class="font-semibold text-gray-500">Username</dt>
+                <dd class="mt-1 text-gray-900">{{ account.username or 'Not provided' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold text-gray-500">Email</dt>
+                <dd class="mt-1 text-gray-900">{{ account.email or 'Not provided' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold text-gray-500">GFAVIP Tier</dt>
+                <dd class="mt-1 text-gray-900">{{ account.gfavip_tier }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold text-gray-500">LearnHNS Tier</dt>
+                <dd class="mt-1 text-gray-900">{{ account.local_tier }}</dd>
+            </div>
+        </dl>
+    </section>
+
+    <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 class="mb-4 text-xl font-bold">Monitoring</h2>
+        <dl class="space-y-4 text-sm">
+            <div>
+                <dt class="font-semibold text-gray-500">Watchlist Usage</dt>
+                <dd class="mt-1 text-gray-900">{{ watchlist_count }} / {{ watchlist_limit }} names</dd>
+            </div>
+            <div>
+                <dt class="font-semibold text-gray-500">Email Alerts</dt>
+                <dd class="mt-1 text-gray-900">{{ 'Enabled' if prefs.emailEnabled else 'Disabled' }}</dd>
+            </div>
+            <div>
+                <dt class="font-semibold text-gray-500">Reminder Days</dt>
+                <dd class="mt-1 text-gray-900">{{ prefs.reminderDays|join(', ') }}</dd>
+            </div>
+        </dl>
+        <div class="mt-6 flex flex-wrap gap-3">
+            <a href="{{ url_for('account.watchlist_page') }}" class="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Manage Watchlist</a>
+            <a href="{{ url_for('account.alerts_page') }}" class="rounded border border-gray-300 px-4 py-2 font-semibold text-gray-700 hover:bg-gray-50">Alert Preferences</a>
+        </div>
+    </section>
+</div>
+{% endblock %}

@@ -84,6 +84,19 @@ def alerts_page():
     )
 
 
+@account_bp.route('/account/settings')
+@login_required
+def settings_page():
+    account = current_account()
+    return render_template(
+        'account_settings.html',
+        account=account,
+        watchlist_limit=account_limit(account),
+        watchlist_count=_watchlist_query(account).count(),
+        prefs=_alert_preferences_payload(_alert_preferences(account)),
+    )
+
+
 @account_bp.route('/alerts/unsubscribe/<token>')
 def unsubscribe_alerts(token):
     account = _account_from_manage_token(token)
