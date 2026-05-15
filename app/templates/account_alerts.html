@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">Renewal Alerts</h1>
+    <p class="text-gray-600">Email reminders for your saved watchlist names.</p>
+</div>
+
+<div class="grid gap-6 lg:grid-cols-[2fr_1fr]">
+    <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <form id="alert-preferences-form" class="space-y-6">
+            <label class="flex items-center gap-3">
+                <input id="email-enabled" type="checkbox" class="h-5 w-5 rounded border-gray-300 text-indigo-600" {% if prefs.emailEnabled %}checked{% endif %}>
+                <span class="font-semibold text-gray-800">Email renewal reminders</span>
+            </label>
+
+            <label class="flex items-center gap-3">
+                <input id="digest-enabled" type="checkbox" class="h-5 w-5 rounded border-gray-300 text-indigo-600" {% if prefs.digestEnabled %}checked{% endif %}>
+                <span class="font-semibold text-gray-800">Daily digest</span>
+            </label>
+
+            <div>
+                <p class="mb-3 font-semibold text-gray-800">Reminder days</p>
+                <div class="flex flex-wrap gap-3">
+                    {% for day in [90, 60, 30, 14, 7, 1] %}
+                    <label class="flex items-center gap-2 rounded border border-gray-200 px-3 py-2">
+                        <input type="checkbox" name="reminder-day" value="{{ day }}" {% if day in prefs.reminderDays %}checked{% endif %}>
+                        <span>{{ day }} days</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div>
+                <label for="timezone" class="mb-2 block font-semibold text-gray-800">Timezone</label>
+                <input id="timezone" type="text" value="{{ prefs.timezone }}" class="w-full rounded border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+                <button type="submit" class="rounded bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700">Save Preferences</button>
+                {% if not manage_token %}
+                <button id="send-test-alert" type="button" class="rounded border border-gray-300 px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50">Send Test Email</button>
+                {% endif %}
+            </div>
+            <p id="alerts-message" class="hidden text-sm"></p>
+        </form>
+    </section>
+
+    <aside class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <p class="text-sm font-semibold uppercase tracking-wide text-gray-500">Account</p>
+        <p class="mt-2 font-semibold text-gray-800">{{ account.email or account.username }}</p>
+        <p class="mt-4 text-sm text-gray-600">{{ watchlist_count }} watched names are eligible for alerts.</p>
+        {% if prefs.unsubscribedAt %}
+        <p class="mt-4 rounded bg-amber-50 p-3 text-sm text-amber-800">Email alerts were unsubscribed on {{ prefs.unsubscribedAt }}.</p>
+        {% endif %}
+    </aside>
+</div>
+
+<script>
+const form = document.getElementById('alert-preferences-form');
+const message = document.getElementById('alerts-message');
+const manageToken = {{ (manage_token or '')|tojson }};
+
+function showMessage(text, ok = true) {
+  message.textContent = text;
+  message.className = `text-sm ${ok ? 'text-green-700' : 'text-red-700'}`;
+}
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const days = Array.from(document.querySelectorAll('input[name="reminder-day"]:checked')).map(input => Number(input.value));
+  const res = await fetch('/api/v2/account/alert-preferences', {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      emailEnabled: document.getElementById('email-enabled').checked,
+      digestEnabled: document.getElementById('digest-enabled').checked,
+      reminderDays: days,
+      timezone: document.getElementById('timezone').value,
+      manageToken
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMessage(data.error || 'Could not save preferences.', false);
+  showMessage('Alert preferences saved.');
+});
+
+document.getElementById('send-test-alert')?.addEventListener('click', async () => {
+  const res = await fetch('/api/v2/account/alerts/test', {method: 'POST'});
+  const data = await res.json();
+  if (!res.ok) return showMessage(data.error || 'Could not send test email.', false);
+  showMessage('Test email sent.');
+});
+</script>
+{% endblock %}

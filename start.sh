@@ -10,6 +10,12 @@ if [ "$PROCESS_TYPE" = "expiring-watcher" ]; then
         --batch-size "${WATCHER_BATCH_SIZE:-10}"
 fi
 
+if [ "$PROCESS_TYPE" = "renewal-alerts" ]; then
+    echo "Running Renewal Alert Worker..."
+    exec python scripts/send-renewal-alerts.py \
+        --limit "${ALERT_WORKER_LIMIT:-500}"
+fi
+
 # 1. Run Database Migrations
 echo "Running Database Migrations..."
 flask db upgrade

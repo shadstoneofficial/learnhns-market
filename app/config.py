@@ -39,6 +39,27 @@ class Config:
     HSD_HTTP_TIMEOUT = float(os.getenv('HSD_HTTP_TIMEOUT', '5'))
     EXPIRING_WATCH_REFRESH_MINUTES = int(os.getenv('EXPIRING_WATCH_REFRESH_MINUTES', '60'))
     MARKET_ADMIN_TOKEN = os.getenv('MARKET_ADMIN_TOKEN')
+
+    # Optional GFAVIP SSO account layer.
+    GFAVIP_SSO_BASE_URL = os.getenv('GFAVIP_SSO_BASE_URL', 'https://wallet.gfavip.com').rstrip('/')
+    GFAVIP_SSO_SERVICE = os.getenv('GFAVIP_SSO_SERVICE', 'learnhns-market')
+    GFAVIP_SSO_CALLBACK_URL = os.getenv('GFAVIP_SSO_CALLBACK_URL')
+    GFAVIP_SSO_VALIDATE_URL = os.getenv(
+        'GFAVIP_SSO_VALIDATE_URL',
+        f'{GFAVIP_SSO_BASE_URL}/api/auth/validate',
+    )
+    GFAVIP_SSO_TIMEOUT = float(os.getenv('GFAVIP_SSO_TIMEOUT', '8'))
+    ACCOUNT_SESSION_DAYS = int(os.getenv('ACCOUNT_SESSION_DAYS', '30'))
+    ACCOUNT_COOKIE_SECURE = os.getenv('ACCOUNT_COOKIE_SECURE', '').lower() in {'1', 'true', 'yes'}
+    FREE_WATCHLIST_LIMIT = int(os.getenv('FREE_WATCHLIST_LIMIT', '10'))
+    PRO_WATCHLIST_LIMIT = int(os.getenv('PRO_WATCHLIST_LIMIT', '100'))
+
+    # Mailgun renewal alerts.
+    MAILGUN_API_KEY = os.getenv('MAILGUN_API_KEY')
+    MAILGUN_DOMAIN = os.getenv('MAILGUN_DOMAIN')
+    MAILGUN_FROM = os.getenv('MAILGUN_FROM', 'LearnHNS Alerts <alerts@learnhns.com>')
+    MAILGUN_REGION = os.getenv('MAILGUN_REGION', 'us')
+    ALERTS_BASE_URL = os.getenv('ALERTS_BASE_URL', 'https://market.learnhns.com').rstrip('/')
     
     # Domain configuration
     # SERVER_NAME = os.getenv('SERVER_NAME', 'market.learnhns.com')

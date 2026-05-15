@@ -119,6 +119,9 @@ node -e "const {NodeClient, WalletClient} = require('hsd/lib/client'); console.l
   --api-key YOUR_BOB_WALLET_API_KEY \
   create-fixed YOURNAME 42 \
   --out ~/Desktop/YOURNAME-learnhns-mainnet-proof.json</pre>
+                <p class="mt-2 text-sm text-gray-600">
+                    Use Shakedex commit <code class="rounded bg-gray-100 px-1">2c4fa04</code> or newer. Fixed-price proofs should be immediately buyable: the bid <code class="rounded bg-gray-100 px-1">lockTime</code> is current chain time, while listing visibility is stored separately as <code class="rounded bg-gray-100 px-1">expiresAt</code>.
+                </p>
             </li>
         </ol>
         <p class="mt-5 text-gray-700">

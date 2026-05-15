@@ -5,6 +5,8 @@ from app.config import Config
 from app.models import db
 from app.blueprints.main import main_bp
 from app.blueprints.api import api_bp
+from app.blueprints.account import account_bp
+from app.auth import current_account
 import os
 
 def create_app():
@@ -17,7 +19,12 @@ def create_app():
     
     # Blueprints
     app.register_blueprint(main_bp)
+    app.register_blueprint(account_bp)
     app.register_blueprint(api_bp, url_prefix='/api')
+
+    @app.context_processor
+    def inject_current_account():
+        return {'current_account': current_account()}
     
     # Create upload folder
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)

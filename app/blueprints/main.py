@@ -3,6 +3,7 @@ from urllib.parse import quote
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 from app.blueprints.api import get_hsd_status_payload
+from app.blueprints.api import _active_listings_unique_by_name
 from app.blueprints.api import _pending_listing_payload
 from app.models import Listing, PendingListing
 
@@ -12,11 +13,7 @@ main_bp = Blueprint('main', __name__)
 def index():
     query = request.args.get('q', '')
     min_price = request.args.get('min_price')
-    # Basic active listings query
-    listings = [
-        listing for listing in Listing.query.filter_by(status='active').order_by(Listing.created_at.desc()).all()
-        if not listing.is_expired()
-    ]
+    listings = _active_listings_unique_by_name()
     active_names = {listing.name for listing in listings}
     pending_listings = [
         pending for pending in PendingListing.query.order_by(PendingListing.created_at.desc()).all()

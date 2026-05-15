@@ -136,3 +136,98 @@ class NameIndexerProgress(db.Model):
     started_at = db.Column(db.DateTime, nullable=True)
     finished_at = db.Column(db.DateTime, nullable=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Account(db.Model):
+    __tablename__ = 'accounts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    gfavip_user_id = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    email = db.Column(db.String(255), nullable=True, index=True)
+    username = db.Column(db.String(100), nullable=True, index=True)
+    display_name = db.Column(db.String(255), nullable=True)
+    gfavip_tier = db.Column(db.String(40), default='free', nullable=False, index=True)
+    local_tier = db.Column(db.String(40), default='free', nullable=False, index=True)
+    email_verified_at = db.Column(db.DateTime, nullable=True)
+    last_login_at = db.Column(db.DateTime, nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    sessions = db.relationship('AccountSession', backref='account', lazy=True, cascade='all, delete-orphan')
+    watchlist_items = db.relationship('AccountWatchlistItem', backref='account', lazy=True, cascade='all, delete-orphan')
+    alert_preferences = db.relationship('AccountAlertPreference', backref='account', uselist=False, cascade='all, delete-orphan')
+
+
+class AccountSession(db.Model):
+    __tablename__ = 'account_sessions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=False, index=True)
+    session_token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    revoked_at = db.Column(db.DateTime, nullable=True, index=True)
+
+
+class AccountWatchlistItem(db.Model):
+    __tablename__ = 'account_watchlist_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=False, index=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    network = db.Column(db.String(20), default='main', nullable=False, index=True)
+    source = db.Column(db.String(40), default='manual', nullable=False, index=True)
+    alerts_enabled = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    note = db.Column(db.Text, nullable=True)
+    tags_json = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('account_id', 'network', 'name', name='uq_account_watchlist_account_network_name'),
+    )
+
+
+class AccountAlertPreference(db.Model):
+    __tablename__ = 'account_alert_preferences'
+
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), primary_key=True)
+    email_enabled = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    digest_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    reminder_days_json = db.Column(db.JSON, default=lambda: [30, 14, 7, 1], nullable=False)
+    timezone = db.Column(db.String(80), default='UTC', nullable=False)
+    manage_token_hash = db.Column(db.String(64), nullable=True, unique=True, index=True)
+    unsubscribed_at = db.Column(db.DateTime, nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AccountAlertEvent(db.Model):
+    __tablename__ = 'account_alert_events'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=False, index=True)
+    watchlist_item_id = db.Column(db.Integer, db.ForeignKey('account_watchlist_items.id'), nullable=False, index=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    network = db.Column(db.String(20), default='main', nullable=False, index=True)
+    alert_type = db.Column(db.String(40), default='renewal-reminder', nullable=False, index=True)
+    cadence_days = db.Column(db.Integer, nullable=False, index=True)
+    expiration_height = db.Column(db.Integer, nullable=True, index=True)
+    blocks_until_expire = db.Column(db.Integer, nullable=True)
+    days_until_expire = db.Column(db.Numeric(12, 4), nullable=True)
+    mailgun_message_id = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(40), nullable=False, index=True)
+    error = db.Column(db.Text, nullable=True)
+    sent_at = db.Column(db.DateTime, nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            'account_id',
+            'watchlist_item_id',
+            'alert_type',
+            'cadence_days',
+            'expiration_height',
+            name='uq_account_alert_event_cadence',
+        ),
+    )

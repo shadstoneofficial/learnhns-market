@@ -244,6 +244,23 @@ def _listing_is_available(listing):
     return listing and listing.status == 'active' and not listing.is_expired()
 
 
+def _active_listings_unique_by_name():
+    listings = (
+        Listing.query
+        .filter_by(status='active')
+        .order_by(Listing.created_at.desc())
+        .all()
+    )
+    unique = []
+    seen_names = set()
+    for listing in listings:
+        if listing.is_expired() or listing.name in seen_names:
+            continue
+        unique.append(listing)
+        seen_names.add(listing.name)
+    return unique
+
+
 def _active_listing_for_name(name):
     return (
         Listing.query
@@ -1067,10 +1084,7 @@ def auctions():
     except ValueError:
         return jsonify({"error": "Invalid pagination"}), 400
 
-    active_listings = [
-        listing for listing in Listing.query.filter_by(status='active').order_by(Listing.created_at.desc()).all()
-        if not listing.is_expired()
-    ]
+    active_listings = _active_listings_unique_by_name()
     active_names = {listing.name for listing in active_listings}
     pending_listings = [
         pending for pending in PendingListing.query.order_by(PendingListing.created_at.desc()).all()

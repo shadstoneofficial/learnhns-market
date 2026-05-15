@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+        <h1 class="text-3xl font-bold mb-2">Saved Watchlist</h1>
+        <p class="text-gray-600">Track renewal status and email reminders for names you care about.</p>
+    </div>
+    <div class="text-sm text-gray-500">
+        {{ watchlist_items|length }} / {{ watchlist_limit }} watched names
+    </div>
+</div>
+
+<div class="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+    <form id="watchlist-add-form" class="flex flex-col gap-3 sm:flex-row">
+        <input id="watchlist-name" name="name" type="text" placeholder="example/" class="min-w-0 flex-1 rounded border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <button type="submit" class="rounded bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700">Add Name</button>
+    </form>
+    <p id="watchlist-message" class="mt-3 hidden text-sm"></p>
+</div>
+
+<div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Name</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">State</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Days</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Expiration Height</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Alerts</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="watchlist-body" class="divide-y divide-gray-100">
+            {% for item in watchlist_items %}
+            <tr data-name="{{ item.name }}">
+                <td class="px-4 py-3 font-semibold text-indigo-700">{{ item.name }}/</td>
+                <td class="px-4 py-3 text-sm text-gray-700">{{ item.expiration.status }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700">{{ item.expiration.daysUntilExpire if item.expiration.daysUntilExpire is not none else 'Pending' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700">{{ item.expiration.expirationHeight or 'Pending' }}</td>
+                <td class="px-4 py-3 text-sm">
+                    <button type="button" data-toggle-alerts class="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50">{{ 'On' if item.alertsEnabled else 'Off' }}</button>
+                </td>
+                <td class="px-4 py-3 text-right">
+                    <button type="button" data-remove class="text-sm font-semibold text-red-600 hover:text-red-700">Remove</button>
+                </td>
+            </tr>
+            {% else %}
+            <tr id="watchlist-empty">
+                <td colspan="6" class="px-4 py-10 text-center text-gray-500">No watched names yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+const form = document.getElementById('watchlist-add-form');
+const message = document.getElementById('watchlist-message');
+const body = document.getElementById('watchlist-body');
+
+function showMessage(text, ok = true) {
+  message.textContent = text;
+  message.className = `mt-3 text-sm ${ok ? 'text-green-700' : 'text-red-700'}`;
+}
+
+function rowHtml(item) {
+  const exp = item.expiration || {};
+  return `
+    <tr data-name="${item.name}">
+      <td class="px-4 py-3 font-semibold text-indigo-700">${item.name}/</td>
+      <td class="px-4 py-3 text-sm text-gray-700">${exp.status || 'pending-refresh'}</td>
+      <td class="px-4 py-3 text-sm text-gray-700">${exp.daysUntilExpire ?? 'Pending'}</td>
+      <td class="px-4 py-3 text-sm text-gray-700">${exp.expirationHeight || 'Pending'}</td>
+      <td class="px-4 py-3 text-sm"><button type="button" data-toggle-alerts class="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50">${item.alertsEnabled ? 'On' : 'Off'}</button></td>
+      <td class="px-4 py-3 text-right"><button type="button" data-remove class="text-sm font-semibold text-red-600 hover:text-red-700">Remove</button></td>
+    </tr>
+  `;
+}
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const input = document.getElementById('watchlist-name');
+  const res = await fetch('/api/v2/account/watchlist', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: input.value, alertsEnabled: true})
+  });
+  const data = await res.json();
+  if (!res.ok) return showMessage(data.error || 'Could not add that name.', false);
+  document.getElementById('watchlist-empty')?.remove();
+  const existing = body.querySelector(`tr[data-name="${data.item.name}"]`);
+  if (existing) existing.outerHTML = rowHtml(data.item);
+  else body.insertAdjacentHTML('afterbegin', rowHtml(data.item));
+  input.value = '';
+  showMessage(`${data.item.name}/ is now watched.`);
+});
+
+body.addEventListener('click', async (event) => {
+  const row = event.target.closest('tr[data-name]');
+  if (!row) return;
+  const name = row.dataset.name;
+  if (event.target.matches('[data-remove]')) {
+    const res = await fetch(`/api/v2/account/watchlist/${encodeURIComponent(name)}`, {method: 'DELETE'});
+    if (!res.ok) return showMessage('Could not remove that name.', false);
+    row.remove();
+    showMessage(`${name}/ removed.`);
+  }
+  if (event.target.matches('[data-toggle-alerts]')) {
+    const next = event.target.textContent.trim() !== 'On';
+    const res = await fetch(`/api/v2/account/watchlist/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({alertsEnabled: next})
+    });
+    const data = await res.json();
+    if (!res.ok) return showMessage(data.error || 'Could not update alerts.', false);
+    event.target.textContent = data.item.alertsEnabled ? 'On' : 'Off';
+  }
+});
+</script>
+{% endblock %}
