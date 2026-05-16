@@ -112,6 +112,16 @@ def _pending_listing_status(pending):
             "transferHeight": tx_height,
         }
 
+    active_transfer = _pending_name_info_matches_transfer(pending)
+    if active_transfer is False:
+        return {
+            "status": "pending-submitted",
+            "pendingReason": "Pending record received; no active transfer lockup is visible for this pending transfer.",
+            "blocksUntilFinalize": None,
+            "chainHeight": chain_height,
+            "transferHeight": None,
+        }
+
     blocks_since_transfer = max(chain_height - tx_height, 0)
     blocks_until_finalize = max((SHAKEDEX_TRANSFER_LOCKUP + 1) - blocks_since_transfer, 0)
     if blocks_until_finalize > 0:
@@ -130,6 +140,32 @@ def _pending_listing_status(pending):
         "chainHeight": chain_height,
         "transferHeight": tx_height,
     }
+
+
+def _pending_name_info_matches_transfer(pending):
+    name_info, name_error = _fetch_hsd_name_info(pending.name)
+    if name_error:
+        return None
+
+    info = name_info.get('info') if isinstance(name_info, dict) else None
+    if not isinstance(info, dict):
+        return None
+
+    owner = info.get('owner') if isinstance(info.get('owner'), dict) else {}
+    owner_hash = str(owner.get('hash') or '').lower()
+    if not owner_hash:
+        return None
+    if owner_hash != pending.transfer_tx_hash:
+        return False
+
+    if pending.transfer_output_idx is not None:
+        try:
+            if int(owner.get('index')) != int(pending.transfer_output_idx):
+                return False
+        except (TypeError, ValueError):
+            return None
+
+    return True
 
 
 def _pending_status_from_name_info(pending, chain_payload=None, chain_status=None):
