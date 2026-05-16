@@ -205,6 +205,33 @@ def _pending_status_from_name_info(pending, chain_payload=None, chain_status=Non
             "nameState": info.get('state'),
         }
 
+    owner = info.get('owner') if isinstance(info.get('owner'), dict) else {}
+    owner_hash = str(owner.get('hash') or '').lower()
+    if owner_hash and owner_hash != pending.transfer_tx_hash:
+        return {
+            "status": "pending-submitted",
+            "pendingReason": "Pending record received; no active transfer lockup is visible for this pending transfer.",
+            "blocksUntilFinalize": None,
+            "chainHeight": chain_height,
+            "transferHeight": None,
+            "nameState": info.get('state'),
+        }
+
+    if pending.transfer_output_idx is not None:
+        try:
+            owner_index_matches = int(owner.get('index')) == int(pending.transfer_output_idx)
+        except (TypeError, ValueError):
+            owner_index_matches = False
+        if not owner_index_matches:
+            return {
+                "status": "pending-submitted",
+                "pendingReason": "Pending record received; no active transfer lockup is visible for this pending transfer.",
+                "blocksUntilFinalize": None,
+                "chainHeight": chain_height,
+                "transferHeight": None,
+                "nameState": info.get('state'),
+            }
+
     blocks_until_finalize = stats.get('blocksUntilValidFinalize')
     if not isinstance(blocks_until_finalize, int) and isinstance(chain_height, int):
         blocks_since_transfer = max(chain_height - transfer_height, 0)
