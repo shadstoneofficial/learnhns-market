@@ -4,6 +4,7 @@ from urllib.parse import quote
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 from app.blueprints.api import get_hsd_status_payload
 from app.blueprints.api import _active_listings_unique_by_name
+from app.blueprints.api import _fetch_hsd_name_info
 from app.blueprints.api import _pending_listing_payload
 from app.models import Listing, PendingListing
 
@@ -30,14 +31,40 @@ def index():
 
 @main_bp.route('/sold')
 def sold():
-    historical_statuses = ('sold', 'completed', 'archived', 'cancelled')
-    listings = (
+    historical_statuses = ('sale-pending', 'sold', 'completed', 'archived', 'cancelled')
+    historical_listings = (
         Listing.query
         .filter(Listing.status.in_(historical_statuses))
         .order_by(Listing.created_at.desc())
         .all()
     )
+    listings = []
+    seen_names = set()
+    for listing in historical_listings:
+        if listing.name in seen_names:
+            continue
+        listings.append(listing)
+        seen_names.add(listing.name)
     return render_template('sold.html', listings=listings)
+
+
+@main_bp.route('/pending')
+def pending():
+    active_names = {
+        listing.name
+        for listing in _active_listings_unique_by_name()
+    }
+    pending_listings = [
+        pending for pending in PendingListing.query.order_by(PendingListing.created_at.desc()).all()
+        if pending.status not in {'active', 'cancelled', 'expired', 'failed'}
+        and not pending.is_expired()
+        and pending.name not in active_names
+    ]
+    return render_template(
+        'pending_list.html',
+        pending_listings=[_pending_listing_payload(pending) for pending in pending_listings],
+    )
+
 
 @main_bp.route('/upload')
 def upload():
@@ -71,12 +98,8 @@ def status():
 def listing_detail(name):
     normalized_name = name.lower().rstrip('/')
     listing_history = _listing_history(normalized_name)
-    listing = (
-        Listing.query
-        .filter_by(name=normalized_name, status='active')
-        .order_by(Listing.created_at.desc())
-        .first()
-    )
+    listing = _active_listings_unique_by_name()
+    listing = next((row for row in listing if row.name == normalized_name), None)
     if not listing:
         pending = (
             PendingListing.query
@@ -96,8 +119,14 @@ def listing_detail(name):
             Listing.query
             .filter_by(name=normalized_name)
             .order_by(Listing.created_at.desc())
-            .first_or_404()
+            .first()
         )
+        if not listing:
+            return render_template(
+                'name_profile.html',
+                profile=_name_profile_payload(normalized_name),
+                listing_history=listing_history,
+            )
 
     listing_is_expired = listing.is_expired()
     listing_display_status = 'expired' if listing_is_expired else listing.status
@@ -123,12 +152,13 @@ def listing_detail(name):
 
 @main_bp.route('/listing/<name>/proof.json')
 def listing_proof(name):
-    listing = (
-        Listing.query
-        .filter_by(name=name, status='active')
-        .order_by(Listing.created_at.desc())
-        .first_or_404()
+    normalized_name = name.lower().rstrip('/')
+    listing = next(
+        (row for row in _active_listings_unique_by_name() if row.name == normalized_name),
+        None,
     )
+    if listing is None:
+        return jsonify({"error": "Active listing not found"}), 404
     return jsonify(listing.proof_json)
 
 
@@ -138,13 +168,52 @@ def pending_detail(name):
 
 
 def _listing_history(name):
-    historical_statuses = ('sold', 'completed', 'archived', 'cancelled')
+    historical_statuses = ('sale-pending', 'sold', 'completed', 'archived', 'cancelled')
     return (
         Listing.query
         .filter(Listing.name == name, Listing.status.in_(historical_statuses))
         .order_by(Listing.created_at.desc())
         .all()
     )
+
+
+def _name_profile_payload(name):
+    info, error = _fetch_hsd_name_info(name)
+    if error:
+        message, status = error[:2]
+        return {
+            "name": name,
+            "found": False,
+            "error": message,
+            "statusCode": status,
+            "info": {},
+            "stats": {},
+            "start": {},
+        }
+
+    payload = info if isinstance(info, dict) else {}
+    name_info = payload.get('info') if isinstance(payload.get('info'), dict) else {}
+    start_info = payload.get('start') if isinstance(payload.get('start'), dict) else {}
+    stats = name_info.get('stats') if isinstance(name_info.get('stats'), dict) else {}
+    return {
+        "name": name,
+        "found": bool(name_info),
+        "info": name_info,
+        "start": start_info,
+        "stats": stats,
+        "state": name_info.get('state'),
+        "registered": name_info.get('registered'),
+        "expired": name_info.get('expired'),
+        "reserved": start_info.get('reserved'),
+        "locked": start_info.get('locked'),
+        "owner": name_info.get('owner') if isinstance(name_info.get('owner'), dict) else None,
+        "renewalHeight": name_info.get('renewal'),
+        "transferHeight": name_info.get('transfer'),
+        "blocksUntilExpire": stats.get('blocksUntilExpire'),
+        "daysUntilExpire": stats.get('daysUntilExpire'),
+        "valueHns": name_info.get('value') / 1000000 if isinstance(name_info.get('value'), int) else None,
+        "highestHns": name_info.get('highest') / 1000000 if isinstance(name_info.get('highest'), int) else None,
+    }
 
 
 def _hsd_readiness():

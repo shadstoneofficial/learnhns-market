@@ -317,6 +317,8 @@ def _active_listings_unique_by_name():
     unique = []
     seen_names = set()
     for listing in listings:
+        if _listing_lock_coin_is_spent(listing):
+            continue
         if listing.is_expired() or listing.name in seen_names:
             continue
         unique.append(listing)
@@ -325,9 +327,21 @@ def _active_listings_unique_by_name():
 
 
 def _active_listing_for_name(name):
-    return (
+    listing = (
         Listing.query
         .filter_by(name=name, status='active')
+        .order_by(Listing.created_at.desc())
+        .first()
+    )
+    if _listing_lock_coin_is_spent(listing):
+        return None
+    return listing
+
+
+def _refreshable_listing_for_name(name):
+    return (
+        Listing.query
+        .filter(Listing.name == name, Listing.status.in_(('active', 'sale-pending')))
         .order_by(Listing.created_at.desc())
         .first()
     )
@@ -336,6 +350,35 @@ def _active_listing_for_name(name):
 def _listing_coin_ref(listing):
     proof = listing.proof_json
     return proof["lockingTxHash"], proof["lockingOutputIdx"]
+
+
+def _listing_lock_coin_is_spent(listing):
+    if not listing or listing.status != 'active':
+        return False
+
+    tx_hash, output_index = _listing_coin_ref(listing)
+    _, error = _fetch_hsd_coin(tx_hash, output_index)
+    if not error:
+        return False
+
+    status = error[1]
+    if status != 404:
+        current_app.logger.warning(
+            "Could not verify Shakedex listing coin for %s: %s",
+            listing.name,
+            error[0],
+        )
+        return False
+
+    listing.status = 'sale-pending'
+    db.session.commit()
+    current_app.logger.info(
+        "Marked Shakedex listing %s sale-pending because lock coin %s/%s is spent.",
+        listing.name,
+        tx_hash,
+        output_index,
+    )
+    return True
 
 
 def _tx_spends_listing_coin(tx, listing):
@@ -373,7 +416,16 @@ def _verified_listing_spend(tx_hash, listing):
     tx, error = _fetch_hsd_tx(tx_hash)
     if error:
         message, status = error[:2]
-        return None, {"error": message}, status
+        if status != 404:
+            return None, {"error": message}, status
+
+        tx, explorer_error = _fetch_explorer_tx(tx_hash)
+        if explorer_error:
+            explorer_message, explorer_status = explorer_error[:2]
+            return None, {
+                "error": message,
+                "fallbackError": explorer_message,
+            }, explorer_status
 
     if not _tx_spends_listing_coin(tx, listing):
         return None, {
@@ -388,7 +440,7 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
     tx_hash, output_index = _listing_coin_ref(listing)
 
     if sale_tx_hash:
-        _, payload, status = _verified_listing_spend(sale_tx_hash, listing)
+        tx, payload, status = _verified_listing_spend(sale_tx_hash, listing)
         if status != 200:
             return False, payload, status
 
@@ -401,6 +453,7 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
             "status": listing.status,
             "soldAt": listing.sold_at.isoformat(),
             "saleTxHash": listing.sale_tx_hash,
+            "verificationSource": tx.get("source") if isinstance(tx, dict) else None,
             "url": f"/listing/{listing.name}",
         }, 200
 
@@ -411,10 +464,12 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
         if status != 404:
             return False, {"error": message}, status
 
+        listing.status = 'sale-pending'
+        db.session.commit()
         return False, {
             "sold": False,
-            "status": "spent-unverified",
-            "message": "The Shakedex locking coin is no longer available. Submit a saleTxHash to verify this was a sale before recording sale history.",
+            "status": listing.status,
+            "message": "The Shakedex locking coin is no longer available. The listing has been removed from active results while waiting for sale transaction verification.",
             "url": f"/listing/{listing.name}",
         }, 200
 
@@ -571,6 +626,58 @@ def _fetch_hsd_tx(tx_hash):
     if error and error[1] == 404:
         return None, ("Transaction was not found", 404, error[2])
     return tx, error
+
+
+def _fetch_explorer_tx(tx_hash):
+    explorer_base_url = current_app.config.get('TX_EXPLORER_BASE_URL')
+    if not explorer_base_url:
+        return None, ("Transaction explorer fallback is not configured", 503, None)
+
+    try:
+        response = requests.get(
+            f"{explorer_base_url.rstrip('/')}/{tx_hash}",
+            timeout=current_app.config.get('HSD_HTTP_TIMEOUT', 5),
+        )
+    except requests.RequestException as exc:
+        current_app.logger.warning("Failed tx explorer lookup for %s: %s", tx_hash, exc)
+        return None, ("Could not reach transaction explorer fallback", 503, str(exc))
+
+    if response.status_code == 404:
+        return None, ("Transaction was not found by explorer fallback", 404, response.text[:500])
+    if response.status_code >= 400:
+        current_app.logger.warning(
+            "Tx explorer lookup failed for %s with status %s: %s",
+            tx_hash,
+            response.status_code,
+            response.text[:500],
+        )
+        return None, ("Transaction explorer fallback request failed", 503, response.text[:500])
+
+    html = response.text or ''
+    if tx_hash not in html:
+        return None, ("Transaction explorer fallback returned an unexpected page", 503, html[:500])
+
+    inputs = []
+    for match in re.finditer(
+        r'<a\b(?=[^>]*data-tooltip=["\']input["\'])(?=[^>]*href=["\'][^"\']*/transaction/([a-f0-9]{64})#output-(\d+)["\'])[^>]*>',
+        html,
+        re.IGNORECASE,
+    ):
+        inputs.append({
+            "prevout": {
+                "hash": match.group(1).lower(),
+                "index": int(match.group(2)),
+            },
+        })
+
+    if not inputs:
+        return None, ("Transaction explorer fallback returned no transaction inputs", 503, html[:500])
+
+    return {
+        "hash": tx_hash,
+        "inputs": inputs,
+        "source": "tx-explorer",
+    }, None
 
 
 def _fetch_hsd_name_info(name):
@@ -1171,13 +1278,20 @@ def auctions():
 
 @api_bp.route('/v2/sales', methods=['GET'])
 def sales():
-    sold_statuses = ('sold', 'completed', 'archived')
-    listings = (
+    sale_statuses = ('sale-pending', 'sold', 'completed', 'archived')
+    historical_listings = (
         Listing.query
-        .filter(Listing.status.in_(sold_statuses))
+        .filter(Listing.status.in_(sale_statuses))
         .order_by(Listing.created_at.desc())
         .all()
     )
+    listings = []
+    seen_names = set()
+    for listing in historical_listings:
+        if listing.name in seen_names:
+            continue
+        listings.append(listing)
+        seen_names.add(listing.name)
 
     return jsonify({
         "total": len(listings),
@@ -1187,6 +1301,8 @@ def sales():
                 "name": listing.name,
                 "priceHns": float(listing.price_hns),
                 "status": listing.status,
+                "statusLabel": _sale_status_label(listing.status),
+                "pending": listing.status == 'sale-pending',
                 "createdAt": listing.created_at.isoformat() if listing.created_at else None,
                 "soldAt": listing.sold_at.isoformat() if listing.sold_at else None,
                 "saleTxHash": listing.sale_tx_hash,
@@ -1196,6 +1312,15 @@ def sales():
             for listing in listings
         ],
     })
+
+
+def _sale_status_label(status):
+    return {
+        'sale-pending': 'Sale pending',
+        'sold': 'Sold',
+        'completed': 'Completed',
+        'archived': 'Archived',
+    }.get(status, status.replace('-', ' ').title())
 
 
 @api_bp.route('/v2/pending-listings', methods=['GET'])
@@ -1380,9 +1505,9 @@ def coin_lookup(tx_hash, output_index):
 
 @api_bp.route('/v2/listings/<name>/refresh-status', methods=['GET', 'POST'])
 def refresh_listing_status(name):
-    listing = _active_listing_for_name(name.lower().rstrip('/'))
-    if not _listing_is_available(listing):
-        return jsonify({"error": "Active listing not found"}), 404
+    listing = _refreshable_listing_for_name(name.lower().rstrip('/'))
+    if not listing or listing.is_expired():
+        return jsonify({"error": "Listing not found"}), 404
 
     data = request.get_json(silent=True) or {}
     request_values = {**request.args.to_dict(), **data}

@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, render_template
 from flask_migrate import Migrate
 from flask_cors import CORS
 from app.config import Config
@@ -25,6 +25,10 @@ def create_app():
     @app.context_processor
     def inject_current_account():
         return {'current_account': current_account()}
+
+    @app.errorhandler(404)
+    def not_found(error):
+        return render_template('404.html'), 404
     
     # Create upload folder
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)

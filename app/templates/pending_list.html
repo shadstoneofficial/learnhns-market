@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+
+{% block title %}Pending Listings | LearnHNS Market{% endblock %}
+
+{% block content %}
+<div class="mb-8 text-center sm:text-left">
+    <h1 class="text-3xl font-bold mb-2">Pending Listings</h1>
+    <p class="text-gray-600">Names moving through the Shakedex transfer lockup before they become buyable.</p>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+    <div class="hidden lg:grid grid-cols-7 gap-4 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <div>Name</div>
+        <div>Expected Price</div>
+        <div>Status</div>
+        <div>Lockup</div>
+        <div>Transfer</div>
+        <div>Updated</div>
+        <div>Watch</div>
+    </div>
+    {% for pending in pending_listings %}
+    <div class="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-4 lg:grid-cols-7 lg:gap-4">
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 lg:hidden">Name</div>
+            <a href="{{ url_for('main.listing_detail', name=pending.name) }}" class="font-semibold text-indigo-700 hover:underline break-all">{{ pending.name }}</a>
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 lg:hidden">Expected Price</div>
+            {% if pending.expectedPrice %}
+                {{ "{:,.2f}".format(pending.expectedPrice / 1000000) }} HNS
+            {% else %}
+                Price coming soon
+            {% endif %}
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 lg:hidden">Status</div>
+            <span class="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-800">{{ pending.status }}</span>
+            <p class="mt-2 text-sm text-gray-500">{{ pending.pendingReason or 'Waiting for Shakedex proof upload.' }}</p>
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 lg:hidden">Lockup</div>
+            {% if pending.blocksUntilFinalize is not none %}
+                {% if pending.blocksUntilFinalize > 0 %}
+                    {{ pending.blocksUntilFinalize }} blocks left
+                {% else %}
+                    Ready for proof finalization
+                {% endif %}
+            {% else %}
+                Waiting for confirmation
+            {% endif %}
+            {% if pending.transferHeight and pending.transferHeight > 0 %}
+                <p class="mt-1 text-sm text-gray-500">Transfer height {{ pending.transferHeight }}</p>
+            {% endif %}
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 lg:hidden">Transfer</div>
+            <a href="https://shakeshift.com/transaction/{{ pending.transferTxHash }}" class="font-mono text-sm text-indigo-700 hover:underline break-all" target="_blank" rel="noopener">{{ pending.transferTxHash[:10] }}...{{ pending.transferTxHash[-10:] }}</a>
+        </div>
+        <div class="text-gray-500">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 lg:hidden">Updated</div>
+            {% if pending.updatedAt %}
+                {{ pending.updatedAt[:10] }}
+            {% elif pending.createdAt %}
+                {{ pending.createdAt[:10] }}
+            {% else %}
+                Unknown
+            {% endif %}
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 lg:hidden">Watch</div>
+            {% if current_account %}
+                <button type="button" data-watch-name="{{ pending.name }}" class="rounded border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50">Watch listing</button>
+            {% else %}
+                <a href="{{ url_for('account.gfavip_login', next=url_for('main.listing_detail', name=pending.name)) }}" class="inline-block rounded border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50">Login to watch</a>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="px-5 py-14 text-center text-gray-500">
+        <p class="text-lg font-medium mb-2">No pending listings right now.</p>
+        <p class="text-sm">When sellers start new Shakedex listings, they will appear here during the transfer lockup.</p>
+    </div>
+    {% endfor %}
+</div>
+{% if current_account %}
+<script>
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-watch-name]');
+  if (!button) return;
+  const name = button.dataset.watchName;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Saving...';
+  const res = await fetch('/api/v2/account/watchlist', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, alertsEnabled: true, tags: ['market-listing', 'pending']})
+  });
+  if (res.ok) button.textContent = 'Watched';
+  else {
+    button.disabled = false;
+    button.textContent = original;
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

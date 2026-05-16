@@ -3,22 +3,41 @@
 {% block content %}
 <div class="mb-8 text-center sm:text-left">
     <h1 class="text-3xl font-bold mb-2">Market History</h1>
-    <p class="text-gray-600">Completed sales, archived listings, and seller cancellations appear here.</p>
+    <p class="text-gray-600">Pending and completed Shakedex sales appear here.</p>
 </div>
 
 <div class="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-    <div class="grid grid-cols-4 gap-4 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+    <div class="hidden md:grid grid-cols-5 gap-4 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
         <div>Name</div>
         <div>Price</div>
         <div>Status</div>
         <div>Date</div>
+        <div>Proof</div>
     </div>
     {% for listing in listings %}
-    <div class="grid grid-cols-4 gap-4 px-5 py-4 border-t border-gray-100">
-        <a href="{{ url_for('main.listing_detail', name=listing.name) }}" class="font-semibold text-indigo-700 truncate hover:underline">{{ listing.name }}</a>
-        <div>{{ listing.price_hns }} HNS</div>
-        <div class="capitalize">{{ listing.status }}</div>
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-3 md:gap-4 px-5 py-4 border-t border-gray-100">
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 md:hidden">Name</div>
+            <a href="{{ url_for('main.listing_detail', name=listing.name) }}" class="font-semibold text-indigo-700 truncate hover:underline">{{ listing.name }}</a>
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 md:hidden">Price</div>
+            {{ "{:,.2f}".format(listing.price_hns) }} HNS
+        </div>
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 md:hidden">Status</div>
+            {% if listing.status == 'sale-pending' %}
+                <span class="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-800">Sale pending</span>
+            {% elif listing.status in ['sold', 'completed'] %}
+                <span class="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">{{ listing.status }}</span>
+            {% elif listing.status == 'cancelled' %}
+                <span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">Cancelled</span>
+            {% else %}
+                <span class="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700">{{ listing.status }}</span>
+            {% endif %}
+        </div>
         <div class="text-gray-500">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 md:hidden">Date</div>
             {% if listing.sold_at %}
                 {{ listing.sold_at.strftime('%Y-%m-%d') }}
             {% elif listing.cancelled_at %}
@@ -29,11 +48,21 @@
                 Unknown
             {% endif %}
         </div>
+        <div class="text-sm text-gray-500">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 md:hidden">Proof</div>
+            {% if listing.sale_tx_hash %}
+                <a href="https://shakeshift.com/transaction/{{ listing.sale_tx_hash }}" class="text-indigo-700 hover:underline" target="_blank" rel="noopener">View sale tx</a>
+            {% elif listing.status == 'sale-pending' %}
+                Awaiting sale tx verification
+            {% else %}
+                -
+            {% endif %}
+        </div>
     </div>
     {% else %}
     <div class="px-5 py-14 text-center text-gray-500">
         <p class="text-lg font-medium mb-2">No market history yet.</p>
-        <p class="text-sm">Once Shakedex sales or cancellations are recorded, this page becomes the public market history.</p>
+        <p class="text-sm">Once Shakedex sales are detected, this page becomes the public market history.</p>
     </div>
     {% endfor %}
 </div>

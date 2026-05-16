@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}{{ listing.name }} for sale | LearnHNS Market{% endblock %}
+{% block title %}{{ listing.name }} {% if listing_display_status == 'active' %}for sale{% else %}listing history{% endif %} | LearnHNS Market{% endblock %}
 
 {% block content %}
 <div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-100">
@@ -10,7 +10,7 @@
     
     <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">{{ listing.name }}</h1>
     {% if listing_display_status == 'active' %}
-        <div class="text-3xl text-indigo-600 font-bold mb-6">{{ listing.price_hns }} <span class="text-xl text-gray-500 font-medium">HNS</span></div>
+        <div class="text-3xl text-indigo-600 font-bold mb-6">{{ "{:,.2f}".format(listing.price_hns) }} <span class="text-xl text-gray-500 font-medium">HNS</span></div>
     {% elif listing_display_status == 'expired' %}
         <div class="mb-6 inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-amber-800">Expired</div>
     {% else %}
@@ -24,15 +24,30 @@
             <p class="italic text-gray-500">No description provided.</p>
         {% endif %}
     </div>
+
+    <div class="mb-8 rounded-md border border-indigo-100 bg-indigo-50 p-4 text-indigo-950">
+        <p class="font-semibold">Want to keep track of this listing?</p>
+        <p class="mt-1 text-sm text-indigo-900">Save it to your GFAVIP watchlist so you can find it again from your account.</p>
+        <div class="mt-4">
+            {% if current_account %}
+                <button type="button" data-watch-name="{{ listing.name }}" class="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Watch listing</button>
+                <span id="watch-message" class="ml-3 text-sm font-medium"></span>
+            {% else %}
+                <a href="{{ url_for('account.gfavip_login', next=request.path) }}" class="inline-block rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Login with GFAVIP to watch</a>
+            {% endif %}
+        </div>
+    </div>
     
     <div class="bg-gray-50 p-5 rounded-lg mb-8 text-sm text-gray-600 border border-gray-200 shadow-inner">
         <p class="mb-2"><strong class="text-gray-800">Status:</strong> {{ listing_display_status }}</p>
-        <p class="mb-2"><strong class="text-gray-800">Price:</strong> {{ listing.price_hns }} HNS</p>
+        <p class="mb-2"><strong class="text-gray-800">Price:</strong> {{ "{:,.2f}".format(listing.price_hns) }} HNS</p>
         <p class="mb-2"><strong class="text-gray-800">Seller HNS Address:</strong> <span class="font-mono break-all">{{ listing.seller_hns_address }}</span></p>
         <p><strong class="text-gray-800">Listed On:</strong> {{ listing.created_at.strftime('%Y-%m-%d') }}</p>
         {% if listing_expires_at %}
             <p class="mt-2">
-                <strong class="text-gray-800">{% if listing_display_status == 'expired' %}Expired On:{% else %}Buyable Until:{% endif %}</strong>
+                <strong class="text-gray-800">
+                    {% if listing_display_status == 'active' %}Buyable Until:{% elif listing_display_status == 'expired' %}Expired On:{% else %}Original Buyable Until:{% endif %}
+                </strong>
                 {{ listing_expires_at.strftime('%Y-%m-%d %H:%M UTC') }}
             </p>
         {% endif %}
@@ -191,7 +206,7 @@
             {% for sale in listing_history %}
             <div class="rounded-md border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <span><strong>{{ sale.price_hns }} HNS</strong> · {{ sale.status }}</span>
+                    <span><strong>{{ "{:,.2f}".format(sale.price_hns) }} HNS</strong> · {{ sale.status }}</span>
                     <span class="text-gray-500">
                         {% if sale.sold_at %}
                             {{ sale.sold_at.strftime('%Y-%m-%d') }}
@@ -216,4 +231,29 @@
     </div>
     {% endif %}
 </div>
+{% if current_account %}
+<script>
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-watch-name]');
+  if (!button) return;
+  const message = document.getElementById('watch-message');
+  const name = button.dataset.watchName;
+  button.disabled = true;
+  button.textContent = 'Saving...';
+  const res = await fetch('/api/v2/account/watchlist', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, alertsEnabled: true, tags: ['market-listing']})
+  });
+  if (res.ok) {
+    button.textContent = 'Watched';
+    if (message) message.textContent = `${name}/ is now in your watchlist.`;
+  } else {
+    button.disabled = false;
+    button.textContent = 'Watch listing';
+    if (message) message.textContent = 'Could not save this listing.';
+  }
+});
+</script>
+{% endif %}
 {% endblock %}

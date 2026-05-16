@@ -37,6 +37,7 @@ class Config:
     HSD_API_KEY = os.getenv('HSD_API_KEY')
     HSD_API_STYLE = os.getenv('HSD_API_STYLE', 'raw')
     HSD_HTTP_TIMEOUT = float(os.getenv('HSD_HTTP_TIMEOUT', '5'))
+    TX_EXPLORER_BASE_URL = os.getenv('TX_EXPLORER_BASE_URL', 'https://shakeshift.com/transaction').rstrip('/')
     EXPIRING_WATCH_REFRESH_MINUTES = int(os.getenv('EXPIRING_WATCH_REFRESH_MINUTES', '60'))
     MARKET_ADMIN_TOKEN = os.getenv('MARKET_ADMIN_TOKEN')
 

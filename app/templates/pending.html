@@ -9,7 +9,7 @@
             <p class="text-sm font-semibold uppercase tracking-wide text-amber-700">Pending Shakedex Listing</p>
             <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">{{ pending.name }}</h1>
             {% if pending.expectedPrice %}
-                <div class="text-3xl text-amber-700 font-bold">{{ "%.6f"|format(pending.expectedPrice / 1000000) }} <span class="text-xl text-gray-500 font-medium">HNS expected</span></div>
+                <div class="text-3xl text-amber-700 font-bold">{{ "{:,.2f}".format(pending.expectedPrice / 1000000) }} <span class="text-xl text-gray-500 font-medium">HNS expected</span></div>
             {% else %}
                 <div class="text-2xl text-gray-500 font-bold">Price coming soon</div>
             {% endif %}
@@ -38,7 +38,7 @@
             <strong class="text-gray-800">Transfer Transaction:</strong>
             <a class="font-mono text-indigo-600 hover:underline break-all" href="https://shakeshift.com/transaction/{{ pending.transferTxHash }}" target="_blank" rel="noopener noreferrer">{{ pending.transferTxHash }}</a>
         </p>
-        {% if pending.transferHeight %}
+        {% if pending.transferHeight and pending.transferHeight > 0 %}
             <p><strong class="text-gray-800">Transfer Height:</strong> {{ pending.transferHeight }}</p>
         {% endif %}
         {% if pending.chainHeight %}
@@ -52,6 +52,19 @@
         {% endif %}
     </div>
 
+    <div class="mt-8 rounded-md border border-indigo-100 bg-indigo-50 p-4 text-indigo-950">
+        <p class="font-semibold">Want to know when this becomes buyable?</p>
+        <p class="mt-1 text-sm text-indigo-900">Watch this listing with a GFAVIP account and keep it in your saved watchlist while the Shakedex lockup finishes.</p>
+        <div class="mt-4">
+            {% if current_account %}
+                <button type="button" data-watch-name="{{ pending.name }}" class="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Watch listing</button>
+                <span id="watch-message" class="ml-3 text-sm font-medium"></span>
+            {% else %}
+                <a href="{{ url_for('account.gfavip_login', next=request.path) }}" class="inline-block rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Login with GFAVIP to watch</a>
+            {% endif %}
+        </div>
+    </div>
+
     <div class="mt-8">
         <a href="{{ url_for('main.index') }}" class="inline-block bg-indigo-50 text-indigo-700 px-4 py-2 rounded font-medium hover:bg-indigo-100 transition">Back to marketplace</a>
     </div>
@@ -63,7 +76,7 @@
             {% for sale in listing_history %}
             <div class="rounded-md border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <span><strong>{{ sale.price_hns }} HNS</strong> · {{ sale.status }}</span>
+                    <span><strong>{{ "{:,.2f}".format(sale.price_hns) }} HNS</strong> · {{ sale.status }}</span>
                     <span class="text-gray-500">
                         {% if sale.sold_at %}
                             {{ sale.sold_at.strftime('%Y-%m-%d') }}
@@ -88,4 +101,29 @@
     </div>
     {% endif %}
 </div>
+{% if current_account %}
+<script>
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-watch-name]');
+  if (!button) return;
+  const message = document.getElementById('watch-message');
+  const name = button.dataset.watchName;
+  button.disabled = true;
+  button.textContent = 'Saving...';
+  const res = await fetch('/api/v2/account/watchlist', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, alertsEnabled: true, tags: ['market-listing', 'pending']})
+  });
+  if (res.ok) {
+    button.textContent = 'Watched';
+    if (message) message.textContent = `${name}/ is now in your watchlist.`;
+  } else {
+    button.disabled = false;
+    button.textContent = 'Watch listing';
+    if (message) message.textContent = 'Could not save this listing.';
+  }
+});
+</script>
+{% endif %}
 {% endblock %}
