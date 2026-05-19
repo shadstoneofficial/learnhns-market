@@ -136,7 +136,7 @@ def listing_detail(name):
     if listing.status == 'active' and not listing_is_expired:
         proof_json = json.dumps(listing.proof_json, separators=(',', ':'))
         bob_deep_link = (
-            f"bob://x/fulfillauction?name={quote(listing.name, safe='')}"
+            f"bob-learnhns://x/fulfillauction?name={quote(listing.name, safe='')}"
             f"&presign={quote(proof_json, safe='')}"
         )
 
