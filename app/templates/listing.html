@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}{{ listing.name }} {% if listing_display_status == 'active' %}for sale{% else %}listing history{% endif %} | LearnHNS Market{% endblock %}
+{% block title %}{{ display_name(listing.name) }} {% if listing_display_status == 'active' %}for sale{% else %}listing history{% endif %} | LearnHNS Market{% endblock %}
 
 {% block content %}
 <div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-100">
@@ -8,7 +8,14 @@
         <a href="{{ url_for('main.index') }}" class="text-indigo-600 hover:underline font-medium">&larr; Back to Listings</a>
     </div>
     
-    <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">{{ listing.name }}</h1>
+    <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">
+        {% if decoded_name(listing.name) != listing.name %}
+            <span class="block">{{ decoded_name(listing.name) }}/</span>
+            <span class="block text-xl font-semibold text-gray-500">{{ listing.name }}/</span>
+        {% else %}
+            {{ listing.name }}
+        {% endif %}
+    </h1>
     {% if listing_display_status == 'active' %}
         <div class="text-3xl text-indigo-600 font-bold mb-6">{{ "{:,.2f}".format(listing.price_hns) }} <span class="text-xl text-gray-500 font-medium">HNS</span></div>
     {% elif listing_display_status == 'expired' %}
@@ -119,6 +126,7 @@
         const shakeMessage = document.getElementById('shake-wallet-message');
         const proofElement = document.getElementById('listing-proof-json');
         const listingName = {{ listing.name | tojson }};
+        const successUrl = {{ url_for('main.listing_success', name=listing.name) | tojson }};
 
         if (!bobButton || !shakeButton || !shakeMessage || !proofElement) return;
 
@@ -177,7 +185,8 @@
               body: JSON.stringify({saleTxHash: fulfillment.fulfillmentTxHash}),
             });
 
-            showShakeMessage(`Purchase transaction accepted: ${fulfillment.fulfillmentTxHash}`, 'success');
+            showShakeMessage(`Purchase transaction accepted: ${fulfillment.fulfillmentTxHash}. Opening next steps...`, 'success');
+            window.location.href = `${successUrl}?tx=${encodeURIComponent(fulfillment.fulfillmentTxHash)}`;
           } catch (err) {
             showShakeMessage(err && err.message ? err.message : 'LearnHNS Wallet purchase could not be started.', 'error');
           } finally {

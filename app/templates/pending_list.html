@@ -22,7 +22,7 @@
     <div class="grid grid-cols-1 gap-3 border-t border-gray-100 px-5 py-4 lg:grid-cols-7 lg:gap-4">
         <div>
             <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 lg:hidden">Name</div>
-            <a href="{{ url_for('main.listing_detail', name=pending.name) }}" class="font-semibold text-indigo-700 hover:underline break-all">{{ pending.name }}</a>
+            <a href="{{ url_for('main.listing_detail', name=pending.name) }}" class="font-semibold text-indigo-700 hover:underline break-all">{{ display_name(pending.name) }}</a>
         </div>
         <div>
             <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 lg:hidden">Expected Price</div>

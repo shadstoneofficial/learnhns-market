@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block title %}Purchase started for {{ display_name(listing.name) }} | LearnHNS Market{% endblock %}
+
+{% block content %}
+<div class="relative mx-auto max-w-3xl overflow-hidden rounded-lg border border-green-100 bg-white p-8 shadow-sm">
+    <div class="pointer-events-none absolute inset-x-0 top-0 h-28 overflow-hidden" aria-hidden="true">
+        <span class="confetti-piece bg-indigo-500" style="left: 8%"></span>
+        <span class="confetti-piece bg-green-500 delay-100" style="left: 18%"></span>
+        <span class="confetti-piece bg-amber-400 delay-200" style="left: 31%"></span>
+        <span class="confetti-piece bg-rose-500 delay-300" style="left: 44%"></span>
+        <span class="confetti-piece bg-sky-500 delay-150" style="left: 58%"></span>
+        <span class="confetti-piece bg-violet-500 delay-250" style="left: 72%"></span>
+        <span class="confetti-piece bg-emerald-500 delay-75" style="left: 86%"></span>
+    </div>
+
+    <div class="relative text-center">
+        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl text-green-700">&#10003;</div>
+        <p class="mb-2 text-sm font-semibold uppercase tracking-wide text-green-700">Purchase Transaction Accepted</p>
+        <h1 class="mb-3 text-4xl font-bold text-gray-950 break-all">Congratulations on {{ display_name(listing.name) }}/</h1>
+        <p class="mx-auto max-w-2xl text-lg text-gray-700">
+            Your Shakedex buy transaction has been accepted. The name is not immediately spendable: Handshake transfers have a lockup period of about 2 days, or 288 blocks, before the final claim step.
+        </p>
+    </div>
+
+    {% if tx_hash %}
+    <div class="mt-8 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-950">
+        <p class="font-semibold">Transaction hash</p>
+        <a class="mt-1 block break-all font-mono text-green-800 underline" href="https://shakeshift.com/transaction/{{ tx_hash }}" target="_blank" rel="noopener noreferrer">{{ tx_hash }}</a>
+    </div>
+    {% endif %}
+
+    <div class="mt-8 grid gap-4 md:grid-cols-3">
+        <div class="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <p class="font-semibold text-gray-900">1. Wait for lockup</p>
+            <p class="mt-1 text-sm text-gray-600">The transfer needs roughly 2 days to mature on chain.</p>
+        </div>
+        <div class="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <p class="font-semibold text-gray-900">2. Keep wallet ready</p>
+            <p class="mt-1 text-sm text-gray-600">Use the same wallet to complete the final transfer step when it unlocks.</p>
+        </div>
+        <div class="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <p class="font-semibold text-gray-900">3. Check status</p>
+            <p class="mt-1 text-sm text-gray-600">Return to this page or the wallet history if you need the transaction hash.</p>
+        </div>
+    </div>
+
+    <div class="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+        <a href="{{ url_for('main.listing_detail', name=listing.name) }}" class="rounded bg-indigo-600 px-5 py-3 text-center font-semibold text-white hover:bg-indigo-700">View Listing</a>
+        <a href="{{ url_for('main.index') }}" class="rounded border border-gray-300 px-5 py-3 text-center font-semibold text-gray-700 hover:bg-gray-50">Back to Market</a>
+    </div>
+</div>
+
+<style>
+@keyframes confetti-fall {
+  0% { transform: translateY(-24px) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(130px) rotate(240deg); opacity: 0; }
+}
+
+.confetti-piece {
+  animation: confetti-fall 1.6s ease-in-out infinite;
+  border-radius: 2px;
+  display: block;
+  height: 18px;
+  position: absolute;
+  top: -24px;
+  width: 9px;
+}
+
+.delay-75 { animation-delay: 75ms; }
+.delay-100 { animation-delay: 100ms; }
+.delay-150 { animation-delay: 150ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-250 { animation-delay: 250ms; }
+.delay-300 { animation-delay: 300ms; }
+</style>
+{% endblock %}

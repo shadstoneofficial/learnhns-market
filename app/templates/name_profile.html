@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}{{ profile.name }} name profile | LearnHNS Market{% endblock %}
+{% block title %}{{ display_name(profile.name) }} name profile | LearnHNS Market{% endblock %}
 
 {% block content %}
 <div class="mx-auto max-w-3xl rounded-lg border border-gray-100 bg-white p-8 shadow-sm">
@@ -11,7 +11,7 @@
     <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
             <p class="text-sm font-semibold uppercase tracking-wide text-gray-500">Handshake Name Profile</p>
-            <h1 class="break-all text-4xl font-bold text-gray-900">{{ profile.name }}</h1>
+            <h1 class="break-all text-4xl font-bold text-gray-900">{{ display_name(profile.name) }}</h1>
         </div>
         {% if profile.found %}
             <span class="rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-gray-700">{{ profile.state or 'On-chain' }}</span>

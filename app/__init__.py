@@ -9,6 +9,22 @@ from app.blueprints.account import account_bp
 from app.auth import current_account
 import os
 
+def display_name(name):
+    decoded = decoded_name(name)
+    if decoded == name:
+        return name
+    return f"{decoded} {name}"
+
+
+def decoded_name(name):
+    if not isinstance(name, str) or not name.startswith('xn--'):
+        return name
+    try:
+        return name.encode('ascii').decode('idna')
+    except UnicodeError:
+        return name
+
+
 def create_app():
     app = Flask(__name__, template_folder='templates', static_folder='static')
     app.config.from_object(Config)
@@ -24,7 +40,11 @@ def create_app():
 
     @app.context_processor
     def inject_current_account():
-        return {'current_account': current_account()}
+        return {
+            'current_account': current_account(),
+            'display_name': display_name,
+            'decoded_name': decoded_name,
+        }
 
     @app.errorhandler(404)
     def not_found(error):

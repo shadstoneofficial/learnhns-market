@@ -150,6 +150,28 @@ def listing_detail(name):
         hsd_readiness=_hsd_readiness(),
     )
 
+
+@main_bp.route('/listing/<name>/success')
+def listing_success(name):
+    normalized_name = name.lower().rstrip('/')
+    tx_hash = request.args.get('tx', '').strip()
+    listing = (
+        Listing.query
+        .filter_by(name=normalized_name)
+        .order_by(Listing.created_at.desc())
+        .first()
+    )
+
+    if not listing:
+        return redirect(url_for('main.listing_detail', name=normalized_name))
+
+    return render_template(
+        'purchase_success.html',
+        listing=listing,
+        tx_hash=tx_hash,
+    )
+
+
 @main_bp.route('/listing/<name>/proof.json')
 def listing_proof(name):
     normalized_name = name.lower().rstrip('/')

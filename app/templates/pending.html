@@ -1,13 +1,13 @@
 {% extends 'base.html' %}
 
-{% block title %}{{ pending.name }} pending listing | LearnHNS Market{% endblock %}
+{% block title %}{{ display_name(pending.name) }} pending listing | LearnHNS Market{% endblock %}
 
 {% block content %}
 <div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-100">
     <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
             <p class="text-sm font-semibold uppercase tracking-wide text-amber-700">Pending Shakedex Listing</p>
-            <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">{{ pending.name }}</h1>
+            <h1 class="text-4xl font-bold mb-2 text-gray-900 break-all">{{ display_name(pending.name) }}</h1>
             {% if pending.expectedPrice %}
                 <div class="text-3xl text-amber-700 font-bold">{{ "{:,.2f}".format(pending.expectedPrice / 1000000) }} <span class="text-xl text-gray-500 font-medium">HNS expected</span></div>
             {% else %}
