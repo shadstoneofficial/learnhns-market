@@ -1868,7 +1868,36 @@ def upload_proof():
         os.remove(temp_path)
         return jsonify({"error": msg}), 400
     
-    # Pin to IPFS
+    listing_fields = fixed_price_listing_fields(proof_data)
+    if listing_fields['expires_at'] and listing_fields['expires_at'] < datetime.utcnow():
+        os.remove(temp_path)
+        return jsonify({"error": "This proof has already expired. Please create a fresh proof and upload it again."}), 400
+
+    existing_active = (
+        Listing.query
+        .filter_by(name=listing_fields['name'], status='active')
+        .order_by(Listing.created_at.desc())
+        .first()
+    )
+    replacement_listing = None
+    if existing_active and not existing_active.is_expired():
+        existing_proof = existing_active.proof_json or {}
+        same_listing_lock = (
+            existing_proof.get('lockingTxHash') == proof_data.get('lockingTxHash')
+            and existing_proof.get('lockingOutputIdx') == proof_data.get('lockingOutputIdx')
+            and existing_proof.get('publicKey') == proof_data.get('publicKey')
+        )
+        if not same_listing_lock:
+            os.remove(temp_path)
+            return jsonify({
+                "error": (
+                    f"An active listing for {listing_fields['name']} already exists. "
+                    "Cancel it or wait for it to expire before uploading a different listing proof."
+                )
+            }), 409
+        replacement_listing = existing_active
+
+    # Pin to IPFS after validation/replacement checks so rejected duplicates do not create pins.
     try:
         cid = pin_to_ipfs(temp_path)
     except Exception as e:
@@ -1876,14 +1905,6 @@ def upload_proof():
         return jsonify({"error": f"Failed to pin to IPFS: {str(e)}"}), 500
         
     os.remove(temp_path)
-    
-    listing_fields = fixed_price_listing_fields(proof_data)
-    if listing_fields['expires_at'] and listing_fields['expires_at'] < datetime.utcnow():
-        return jsonify({"error": "This proof has already expired. Please create a fresh proof and upload it again."}), 400
-
-    existing_active = Listing.query.filter_by(name=listing_fields['name'], status='active').first()
-    if existing_active and not existing_active.is_expired():
-        return jsonify({"error": f"An active listing for {listing_fields['name']} already exists"}), 409
 
     listing = Listing(
         name=listing_fields['name'],
@@ -1897,6 +1918,8 @@ def upload_proof():
     )
     
     try:
+        if replacement_listing:
+            replacement_listing.status = 'archived'
         db.session.add(listing)
         pending = PendingListing.query.filter_by(name=listing.name).first()
         if pending:
@@ -1911,4 +1934,10 @@ def upload_proof():
         message=f"**{listing.name}** — {listing.price_hns} HNS\n[View]({request.host_url}listing/{listing.name})"
     )
     
-    return jsonify({"success": True, "name": listing.name, "cid": cid}), 201
+    return jsonify({
+        "success": True,
+        "name": listing.name,
+        "cid": cid,
+        "replaced": bool(replacement_listing),
+        "previousListingId": replacement_listing.id if replacement_listing else None,
+    }), 201
