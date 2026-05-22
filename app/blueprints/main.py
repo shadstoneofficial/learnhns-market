@@ -33,19 +33,12 @@ def index():
 @main_bp.route('/sold')
 def sold():
     historical_statuses = ('sale-pending', 'sold', 'completed', 'archived', 'cancelled')
-    historical_listings = (
+    listings = (
         Listing.query
         .filter(Listing.status.in_(historical_statuses))
         .order_by(Listing.created_at.desc())
         .all()
     )
-    listings = []
-    seen_names = set()
-    for listing in historical_listings:
-        if listing.name in seen_names:
-            continue
-        listings.append(listing)
-        seen_names.add(listing.name)
     return render_template('sold.html', listings=listings)
 
 

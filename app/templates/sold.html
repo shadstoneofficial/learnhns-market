@@ -51,7 +51,7 @@
         <div class="text-sm text-gray-500">
             <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 md:hidden">Proof</div>
             {% if listing.sale_tx_hash %}
-                <a href="https://shakeshift.com/transaction/{{ listing.sale_tx_hash }}" class="text-indigo-700 hover:underline" target="_blank" rel="noopener">View sale tx</a>
+                <a href="https://shakeshift.com/transaction/{{ listing.sale_tx_hash }}" class="font-mono text-indigo-700 break-all hover:underline" target="_blank" rel="noopener">{{ listing.sale_tx_hash }}</a>
             {% elif listing.status == 'sale-pending' %}
                 Awaiting sale tx verification
             {% else %}

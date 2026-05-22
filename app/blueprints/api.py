@@ -1346,19 +1346,12 @@ def auctions():
 @api_bp.route('/v2/sales', methods=['GET'])
 def sales():
     sale_statuses = ('sale-pending', 'sold', 'completed', 'archived')
-    historical_listings = (
+    listings = (
         Listing.query
         .filter(Listing.status.in_(sale_statuses))
         .order_by(Listing.created_at.desc())
         .all()
     )
-    listings = []
-    seen_names = set()
-    for listing in historical_listings:
-        if listing.name in seen_names:
-            continue
-        listings.append(listing)
-        seen_names.add(listing.name)
 
     return jsonify({
         "total": len(listings),
