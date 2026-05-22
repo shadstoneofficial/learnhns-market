@@ -406,12 +406,30 @@ def _active_listing_for_name(name):
 
 
 def _refreshable_listing_for_name(name):
+    return _refreshable_listings_for_name(name).first()
+
+
+def _refreshable_listings_for_name(name):
     return (
         Listing.query
         .filter(Listing.name == name, Listing.status.in_(('active', 'sale-pending')))
         .order_by(Listing.created_at.desc())
-        .first()
     )
+
+
+def _refreshable_listing_for_spend(name, tx_hash):
+    last_payload = None
+    last_status = 400
+    for listing in _refreshable_listings_for_name(name).all():
+        if listing.is_expired():
+            continue
+        _, payload, status = _verified_listing_spend(tx_hash, listing)
+        if status == 200:
+            return listing, None, 200
+        last_payload = payload
+        last_status = status
+
+    return None, last_payload or {"error": "Listing not found"}, last_status
 
 
 def _listing_coin_ref(listing):
@@ -1594,9 +1612,7 @@ def coin_lookup(tx_hash, output_index):
 
 @api_bp.route('/v2/listings/<name>/refresh-status', methods=['GET', 'POST'])
 def refresh_listing_status(name):
-    listing = _refreshable_listing_for_name(name.lower().rstrip('/'))
-    if not listing or listing.is_expired():
-        return jsonify({"error": "Listing not found"}), 404
+    normalized_name = name.lower().rstrip('/')
 
     data = request.get_json(silent=True) or {}
     request_values = {**request.args.to_dict(), **data}
@@ -1618,8 +1634,26 @@ def refresh_listing_status(name):
 
     outcome = str(request_values.get('outcome', request_values.get('status', 'sold' if sale_tx_hash else 'refresh'))).strip().lower()
     if outcome in {'cancelled', 'canceled', 'cancel'}:
+        if cancel_tx_hash:
+            listing, payload, status = _refreshable_listing_for_spend(normalized_name, cancel_tx_hash)
+            if not listing:
+                return jsonify(payload), status
+        else:
+            listing = _refreshable_listing_for_name(normalized_name)
+        if not listing or listing.is_expired():
+            return jsonify({"error": "Listing not found"}), 404
         _, payload, status = _mark_listing_cancelled_if_spent(listing, cancel_tx_hash)
         return jsonify(payload), status
+
+    if sale_tx_hash:
+        listing, payload, status = _refreshable_listing_for_spend(normalized_name, sale_tx_hash)
+        if not listing:
+            return jsonify(payload), status
+    else:
+        listing = _refreshable_listing_for_name(normalized_name)
+
+    if not listing or listing.is_expired():
+        return jsonify({"error": "Listing not found"}), 404
 
     _, payload, status = _mark_listing_sold_if_spent(listing, sale_tx_hash or None)
     return jsonify(payload), status
