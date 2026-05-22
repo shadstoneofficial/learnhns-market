@@ -30,6 +30,9 @@
                 <span class="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-800">Sale pending</span>
             {% elif listing.status in ['sold', 'completed'] %}
                 <span class="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">{{ listing.status }}</span>
+                {% if listing.sale_transfer_status %}
+                    <div class="mt-2 text-xs text-gray-500">{{ listing.sale_transfer_status.label }}</div>
+                {% endif %}
             {% elif listing.status == 'cancelled' %}
                 <span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">Cancelled</span>
             {% else %}

@@ -42,6 +42,7 @@ def sold():
     )
     for listing in listings:
         _resolve_sale_pending_listing(listing)
+        listing.sale_transfer_status = _sale_transfer_status(listing)
     return render_template('sold.html', listings=listings)
 
 
@@ -195,6 +196,40 @@ def _listing_history(name):
         .order_by(Listing.created_at.desc())
         .all()
     )
+
+
+def _sale_transfer_status(listing):
+    if listing.status not in {'sold', 'completed'} or not listing.sale_tx_hash:
+        return None
+
+    transfer_status = _name_transfer_status(listing.name)
+    if transfer_status.get('ownerTxHash') != listing.sale_tx_hash:
+        return None
+
+    status = transfer_status.get('status')
+    if status == 'finalized':
+        return {
+            "label": "Finalized by buyer",
+            "tone": "complete",
+        }
+    if status == 'ready-to-finalize':
+        return {
+            "label": "Ready for buyer finalize",
+            "tone": "ready",
+        }
+    if status == 'transfer-lockup':
+        blocks = transfer_status.get('blocksUntilFinalize')
+        if isinstance(blocks, int):
+            return {
+                "label": f"Buyer finalize in {blocks} blocks",
+                "tone": "pending",
+            }
+        return {
+            "label": "Waiting for buyer finalize",
+            "tone": "pending",
+        }
+
+    return None
 
 
 def _name_profile_payload(name):

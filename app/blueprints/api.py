@@ -1561,6 +1561,44 @@ def record_private_sale():
     }), 201 if created else 200
 
 
+@api_bp.route('/v2/listings/archive', methods=['POST'])
+@limiter.limit("20 per hour")
+def archive_listing():
+    auth_error = _require_market_admin()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json(silent=True) or {}
+    listing_id = data.get('listingId', request.args.get('listingId'))
+    if not listing_id:
+        return jsonify({"error": "listingId is required"}), 400
+
+    try:
+        listing_id = int(listing_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "listingId must be an integer"}), 400
+
+    listing = Listing.query.get(listing_id)
+    if not listing:
+        return jsonify({"error": "Listing not found"}), 404
+    if listing.status in {'sold', 'completed'}:
+        return jsonify({"error": "Sold listings cannot be archived"}), 409
+
+    listing.status = 'archived'
+    listing.flagged_reason = str(data.get('reason') or 'Archived by market admin.').strip()
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "id": listing.id,
+        "name": listing.name,
+        "priceHns": float(listing.price_hns),
+        "status": listing.status,
+        "reason": listing.flagged_reason,
+        "url": f"/listing/{listing.name}",
+    })
+
+
 def _sale_status_label(status):
     return {
         'sale-pending': 'Sale pending',
