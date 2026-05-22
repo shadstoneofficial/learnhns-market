@@ -418,6 +418,7 @@ def _refreshable_listings_for_name(name):
 
 
 def _refreshable_listing_for_spend(name, tx_hash):
+    fallback_listing = None
     last_payload = None
     last_status = 400
     for listing in _refreshable_listings_for_name(name).all():
@@ -426,8 +427,13 @@ def _refreshable_listing_for_spend(name, tx_hash):
         _, payload, status = _verified_listing_spend(tx_hash, listing)
         if status == 200:
             return listing, None, 200
+        if fallback_listing is None and _tx_is_finalized_name_owner(tx_hash, listing):
+            fallback_listing = listing
         last_payload = payload
         last_status = status
+
+    if fallback_listing:
+        return fallback_listing, None, 200
 
     return None, last_payload or {"error": "Listing not found"}, last_status
 
@@ -521,12 +527,27 @@ def _verified_listing_spend(tx_hash, listing):
     return tx, None, 200
 
 
+def _tx_is_finalized_name_owner(tx_hash, listing):
+    transfer_status = _name_transfer_status(listing.name)
+    if transfer_status.get('status') != 'finalized':
+        return False
+
+    owner_tx_hash, hash_error = _validate_hex_hash(
+        transfer_status.get('ownerTxHash'),
+        'ownerTxHash',
+    )
+    return not hash_error and owner_tx_hash == tx_hash
+
+
 def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
     tx_hash, output_index = _listing_coin_ref(listing)
 
     if sale_tx_hash:
         tx, payload, status = _verified_listing_spend(sale_tx_hash, listing)
-        if status != 200:
+        verification_source = tx.get("source") if isinstance(tx, dict) else None
+        if status != 200 and _tx_is_finalized_name_owner(sale_tx_hash, listing):
+            verification_source = "name-owner"
+        elif status != 200:
             return False, payload, status
 
         listing.status = 'sold'
@@ -538,7 +559,7 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
             "status": listing.status,
             "soldAt": listing.sold_at.isoformat(),
             "saleTxHash": listing.sale_tx_hash,
-            "verificationSource": tx.get("source") if isinstance(tx, dict) else None,
+            "verificationSource": verification_source,
             "url": f"/listing/{listing.name}",
         }, 200
 
@@ -579,6 +600,13 @@ def _resolve_sale_pending_listing(listing):
         'ownerTxHash',
     )
     if hash_error:
+        return listing
+
+    existing_sale = Listing.query.filter_by(
+        name=listing.name,
+        sale_tx_hash=owner_tx_hash,
+    ).first()
+    if existing_sale:
         return listing
 
     _, payload, status = _mark_listing_sold_if_spent(listing, owner_tx_hash)
