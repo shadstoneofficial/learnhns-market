@@ -77,6 +77,52 @@
             </p>
         {% endif %}
     </div>
+
+    {% if sale_transfer_status and listing_display_status != 'active' %}
+    <div class="mb-8 rounded-lg border {% if sale_transfer_status.status == 'transfer-lockup' %}border-amber-200 bg-amber-50 text-amber-950{% elif sale_transfer_status.status == 'ready-to-finalize' %}border-green-200 bg-green-50 text-green-950{% else %}border-gray-200 bg-gray-50 text-gray-800{% endif %} p-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <p class="text-sm font-semibold uppercase tracking-wide">
+                    {% if sale_transfer_status.status == 'transfer-lockup' %}
+                        Transfer pending finalization
+                    {% elif sale_transfer_status.status == 'ready-to-finalize' %}
+                        Ready to finalize
+                    {% elif sale_transfer_status.status == 'finalized' %}
+                        Transfer status
+                    {% else %}
+                        Transfer status unavailable
+                    {% endif %}
+                </p>
+                <p class="mt-1 text-sm">{{ sale_transfer_status.message }}</p>
+            </div>
+            {% if sale_transfer_status.blocksUntilFinalize is number %}
+                <div class="rounded-md bg-white/70 px-4 py-3 text-center shadow-sm ring-1 ring-black/5">
+                    <div class="text-2xl font-bold">{{ sale_transfer_status.blocksUntilFinalize }}</div>
+                    <div class="text-xs font-semibold uppercase tracking-wide">blocks left</div>
+                </div>
+            {% endif %}
+        </div>
+        <div class="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+            {% if sale_transfer_status.chainHeight %}
+                <p><strong>Current block:</strong> {{ "{:,}".format(sale_transfer_status.chainHeight) }}</p>
+            {% endif %}
+            {% if sale_transfer_status.transferHeight %}
+                <p><strong>Transfer block:</strong> {{ "{:,}".format(sale_transfer_status.transferHeight) }}</p>
+            {% endif %}
+            {% if sale_transfer_status.unlockHeight %}
+                <p><strong>Finalizable at:</strong> block {{ "{:,}".format(sale_transfer_status.unlockHeight) }}</p>
+            {% endif %}
+            {% if sale_transfer_status.ownerTxHash %}
+                <p class="sm:col-span-2">
+                    <strong>Name coin:</strong>
+                    <a class="font-mono text-indigo-700 hover:underline break-all" href="https://shakeshift.com/transaction/{{ sale_transfer_status.ownerTxHash }}{% if sale_transfer_status.ownerOutputIndex is not none %}#output-{{ sale_transfer_status.ownerOutputIndex }}{% endif %}" target="_blank" rel="noopener noreferrer">
+                        {{ sale_transfer_status.ownerTxHash }}{% if sale_transfer_status.ownerOutputIndex is not none %}:{{ sale_transfer_status.ownerOutputIndex }}{% endif %}
+                    </a>
+                </p>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
     
     {% if bob_deep_link %}
     <div class="text-center mt-10">

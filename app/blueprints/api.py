@@ -257,6 +257,73 @@ def _pending_status_from_name_info(pending, chain_payload=None, chain_status=Non
     }
 
 
+def _name_transfer_status(name):
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+    name_info, name_error = _fetch_hsd_name_info(name)
+    if name_error:
+        message, status = name_error[:2]
+        return {
+            "available": False,
+            "status": "unknown",
+            "message": message,
+            "statusCode": status,
+            "chainHeight": chain_height,
+        }
+
+    info = name_info.get('info') if isinstance(name_info, dict) else None
+    if not isinstance(info, dict):
+        return {
+            "available": False,
+            "status": "unknown",
+            "message": "Name state is not available from HSD yet.",
+            "chainHeight": chain_height,
+        }
+
+    owner = info.get('owner') if isinstance(info.get('owner'), dict) else {}
+    stats = info.get('stats') if isinstance(info.get('stats'), dict) else {}
+    transfer_height = info.get('transfer')
+    owner_hash = str(owner.get('hash') or '').lower() or None
+    owner_index = owner.get('index')
+
+    payload = {
+        "available": True,
+        "status": "finalized",
+        "message": "No active transfer lockup is visible for this name.",
+        "chainHeight": chain_height,
+        "transferHeight": transfer_height if isinstance(transfer_height, int) and transfer_height > 0 else None,
+        "unlockHeight": None,
+        "blocksUntilFinalize": None,
+        "ownerTxHash": owner_hash,
+        "ownerOutputIndex": owner_index if isinstance(owner_index, int) else None,
+        "nameState": info.get('state'),
+    }
+
+    if not isinstance(transfer_height, int) or transfer_height <= 0:
+        return payload
+
+    unlock_height = transfer_height + SHAKEDEX_TRANSFER_LOCKUP
+    blocks_until_finalize = stats.get('blocksUntilValidFinalize')
+    if not isinstance(blocks_until_finalize, int) and isinstance(chain_height, int):
+        blocks_until_finalize = max(unlock_height - chain_height, 0)
+
+    payload.update({
+        "status": "transfer-lockup",
+        "message": "Transfer detected; waiting for the 288-block Handshake transfer lockup.",
+        "unlockHeight": unlock_height,
+        "blocksUntilFinalize": blocks_until_finalize,
+    })
+
+    if isinstance(blocks_until_finalize, int) and blocks_until_finalize <= 0:
+        payload.update({
+            "status": "ready-to-finalize",
+            "message": "Transfer lockup is complete; the buyer can now finalize the transfer.",
+            "blocksUntilFinalize": 0,
+        })
+
+    return payload
+
+
 def _pending_listing_payload(pending, refresh=True):
     status_info = _pending_listing_status(pending) if refresh else {
         "status": pending.status,
@@ -1534,6 +1601,11 @@ def refresh_listing_status(name):
 
     _, payload, status = _mark_listing_sold_if_spent(listing, sale_tx_hash or None)
     return jsonify(payload), status
+
+
+@api_bp.route('/v2/names/<name>/transfer-status', methods=['GET'])
+def name_transfer_status(name):
+    return jsonify(_name_transfer_status(name.lower().rstrip('/')))
 
 
 @api_bp.route('/v2/tx/<tx_hash>/status', methods=['GET'])

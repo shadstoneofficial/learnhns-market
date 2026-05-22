@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, redirect, render_template, request, url_fo
 from app.blueprints.api import get_hsd_status_payload
 from app.blueprints.api import _active_listings_unique_by_name
 from app.blueprints.api import _fetch_hsd_name_info
+from app.blueprints.api import _name_transfer_status
 from app.blueprints.api import _pending_listing_payload
 from app.models import Listing, PendingListing
 
@@ -145,6 +146,7 @@ def listing_detail(name):
         listing=listing,
         listing_display_status=listing_display_status,
         listing_expires_at=listing_expires_at,
+        sale_transfer_status=_name_transfer_status(normalized_name),
         bob_deep_link=bob_deep_link,
         listing_history=listing_history,
         hsd_readiness=_hsd_readiness(),
