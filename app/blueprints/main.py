@@ -7,6 +7,7 @@ from app.blueprints.api import _active_listings_unique_by_name
 from app.blueprints.api import _fetch_hsd_name_info
 from app.blueprints.api import _name_transfer_status
 from app.blueprints.api import _pending_listing_payload
+from app.blueprints.api import _resolve_sale_pending_listing
 from app.models import Listing, PendingListing
 
 main_bp = Blueprint('main', __name__)
@@ -39,6 +40,8 @@ def sold():
         .order_by(Listing.created_at.desc())
         .all()
     )
+    for listing in listings:
+        _resolve_sale_pending_listing(listing)
     return render_template('sold.html', listings=listings)
 
 

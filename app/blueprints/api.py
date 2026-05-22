@@ -548,6 +548,33 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
     }, 200
 
 
+def _resolve_sale_pending_listing(listing):
+    if not listing or listing.status != 'sale-pending' or listing.sale_tx_hash:
+        return listing
+
+    transfer_status = _name_transfer_status(listing.name)
+    if transfer_status.get('status') != 'finalized':
+        return listing
+
+    owner_tx_hash, hash_error = _validate_hex_hash(
+        transfer_status.get('ownerTxHash'),
+        'ownerTxHash',
+    )
+    if hash_error:
+        return listing
+
+    _, payload, status = _mark_listing_sold_if_spent(listing, owner_tx_hash)
+    if status != 200:
+        current_app.logger.info(
+            "Could not resolve sale-pending listing %s from owner tx %s: %s",
+            listing.name,
+            owner_tx_hash,
+            payload,
+        )
+
+    return listing
+
+
 def _mark_listing_cancelled_if_spent(listing, cancel_tx_hash):
     if not cancel_tx_hash:
         return False, {"error": "cancelTxHash is required to record a cancelled listing"}, 400
@@ -1352,6 +1379,8 @@ def sales():
         .order_by(Listing.created_at.desc())
         .all()
     )
+    for listing in listings:
+        _resolve_sale_pending_listing(listing)
 
     return jsonify({
         "total": len(listings),
