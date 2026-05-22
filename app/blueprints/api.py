@@ -15,6 +15,7 @@ from app.utils import (
 import os
 import json
 import re
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 from urllib.parse import urljoin
 
@@ -537,6 +538,21 @@ def _tx_is_finalized_name_owner(tx_hash, listing):
         'ownerTxHash',
     )
     return not hash_error and owner_tx_hash == tx_hash
+
+
+def _tx_is_current_name_owner_transfer(name, tx_hash):
+    transfer_status = _name_transfer_status(name)
+    if transfer_status.get('status') not in {'transfer-lockup', 'ready-to-finalize', 'finalized'}:
+        return False, transfer_status
+
+    owner_tx_hash, hash_error = _validate_hex_hash(
+        transfer_status.get('ownerTxHash'),
+        'ownerTxHash',
+    )
+    if hash_error or owner_tx_hash != tx_hash:
+        return False, transfer_status
+
+    return True, transfer_status
 
 
 def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
@@ -1447,6 +1463,102 @@ def sales():
             for listing in listings
         ],
     })
+
+
+@api_bp.route('/v2/sales/private', methods=['POST'])
+@limiter.limit("20 per hour")
+def record_private_sale():
+    auth_error = _require_market_admin()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json(silent=True) or {}
+    name = str(data.get('name', request.args.get('name', ''))).strip().lower().rstrip('/')
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    sale_tx_hash, sale_hash_error = _validate_hex_hash(
+        data.get('saleTxHash', request.args.get('saleTxHash')),
+        'saleTxHash',
+    )
+    if sale_hash_error:
+        message, status = sale_hash_error
+        return jsonify({"error": message}), status
+
+    try:
+        price_hns = Decimal(str(data.get('priceHns', request.args.get('priceHns'))))
+    except (InvalidOperation, TypeError):
+        return jsonify({"error": "priceHns must be a decimal HNS amount"}), 400
+    if price_hns <= 0:
+        return jsonify({"error": "priceHns must be greater than zero"}), 400
+
+    matches_owner, transfer_status = _tx_is_current_name_owner_transfer(name, sale_tx_hash)
+    if not matches_owner:
+        return jsonify({
+            "error": "saleTxHash is not the current owner transfer transaction for this name",
+            "transferStatus": transfer_status,
+        }), 400
+
+    existing_sale = Listing.query.filter_by(name=name, sale_tx_hash=sale_tx_hash).first()
+    if existing_sale:
+        return jsonify({
+            "success": True,
+            "created": False,
+            "id": existing_sale.id,
+            "name": existing_sale.name,
+            "priceHns": float(existing_sale.price_hns),
+            "status": existing_sale.status,
+            "saleTxHash": existing_sale.sale_tx_hash,
+            "url": f"/listing/{existing_sale.name}",
+        })
+
+    listing = (
+        Listing.query
+        .filter_by(name=name, status='sale-pending')
+        .filter(Listing.sale_tx_hash.is_(None))
+        .filter(Listing.price_hns == price_hns)
+        .order_by(Listing.created_at.desc())
+        .first()
+    )
+
+    created = False
+    if listing is None:
+        listing = Listing(
+            name=name,
+            price_hns=price_hns,
+            description='Private Shakedex sale recorded from on-chain transfer history.',
+            seller_hns_address=str(data.get('sellerHnsAddress') or 'private-sale'),
+            ipfs_cid=f"private-sale:{sale_tx_hash[:46]}",
+            proof_json={
+                "version": 2,
+                "name": name,
+                "privateSale": True,
+                "saleTxHash": sale_tx_hash,
+                "ownerOutputIndex": transfer_status.get('ownerOutputIndex'),
+            },
+            status='sold',
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(listing)
+        created = True
+
+    listing.status = 'sold'
+    listing.sold_at = datetime.utcnow()
+    listing.sale_tx_hash = sale_tx_hash
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "created": created,
+        "id": listing.id,
+        "name": listing.name,
+        "priceHns": float(listing.price_hns),
+        "status": listing.status,
+        "soldAt": listing.sold_at.isoformat(),
+        "saleTxHash": listing.sale_tx_hash,
+        "verificationSource": "name-owner",
+        "url": f"/listing/{listing.name}",
+    }), 201 if created else 200
 
 
 def _sale_status_label(status):
