@@ -1637,6 +1637,14 @@ def update_sale_transfer_start():
         message, status = sale_hash_error
         return jsonify({"error": message}), status
 
+    record_sale_tx_hash, record_sale_hash_error = _validate_hex_hash(
+        request_values.get('recordSaleTxHash', request_values.get('record_sale_tx_hash')),
+        'recordSaleTxHash',
+    )
+    if record_sale_hash_error:
+        message, status = record_sale_hash_error
+        return jsonify({"error": message}), status
+
     listing = None
     listing_id = request_values.get('listingId', request_values.get('listing_id'))
     if listing_id:
@@ -1664,6 +1672,8 @@ def update_sale_transfer_start():
     if sale_tx_hash and listing.sale_tx_hash != sale_tx_hash:
         return jsonify({"error": "saleTxHash does not match this listing"}), 409
 
+    if record_sale_tx_hash:
+        listing.sale_tx_hash = record_sale_tx_hash
     listing.transfer_start_tx_hash = transfer_start_tx_hash
     if isinstance(listing.proof_json, dict):
         proof_json = dict(listing.proof_json)
