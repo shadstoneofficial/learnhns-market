@@ -555,6 +555,21 @@ def _tx_is_current_name_owner_transfer(name, tx_hash):
     return True, transfer_status
 
 
+def _index_marketplace_sale_txs(listing):
+    try:
+        from app.marketplace_indexer import index_tx_hash
+
+        for tx_hash_value in (listing.transfer_start_tx_hash, listing.sale_tx_hash):
+            if isinstance(tx_hash_value, str) and len(tx_hash_value) == 64:
+                index_tx_hash(tx_hash_value)
+    except Exception as exc:
+        current_app.logger.warning(
+            "Could not index marketplace sale txs for %s: %s",
+            getattr(listing, 'name', 'unknown'),
+            exc,
+        )
+
+
 def _mark_listing_sold_if_spent(listing, sale_tx_hash=None, transfer_start_tx_hash=None):
     tx_hash, output_index = _listing_coin_ref(listing)
 
@@ -574,6 +589,7 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None, transfer_start_tx_ha
         elif not listing.transfer_start_tx_hash and verification_source != "name-owner":
             listing.transfer_start_tx_hash = sale_tx_hash
         db.session.commit()
+        _index_marketplace_sale_txs(listing)
         return True, {
             "sold": True,
             "status": listing.status,
@@ -1654,6 +1670,7 @@ def update_sale_transfer_start():
         proof_json["transferStartTxHash"] = transfer_start_tx_hash
         listing.proof_json = proof_json
     db.session.commit()
+    _index_marketplace_sale_txs(listing)
 
     return jsonify({
         "success": True,

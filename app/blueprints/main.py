@@ -262,7 +262,12 @@ def _sale_transfer_status_from_height(tx_height, transfer_start_tx_hash, finaliz
     if (
         finalize_tx_hash
         and finalize_tx_hash != transfer_start_tx_hash
-        and _tx_has_name_covenant(finalize_tx_hash, name, 'FINALIZE')
+        and _tx_has_name_covenant(
+            finalize_tx_hash,
+            name,
+            'FINALIZE',
+            min_height=tx_height + SHAKEDEX_TRANSFER_LOCKUP,
+        )
     ):
         return {
             "label": "Buyer finalized transfer",
@@ -291,18 +296,29 @@ def _sale_transfer_status_from_height(tx_height, transfer_start_tx_hash, finaliz
     }
 
 
-def _tx_has_name_covenant(tx_hash, name, covenant_action):
+def _tx_has_name_covenant(tx_hash, name, covenant_action, min_height=None):
     if not tx_hash or not name:
         return False
 
-    if event_for_tx(tx_hash, name=name, action=covenant_action):
-        return True
+    indexed_event = event_for_tx(tx_hash, name=name, action=covenant_action)
+    if indexed_event:
+        if min_height is None or (
+            isinstance(indexed_event.block_height, int)
+            and indexed_event.block_height >= min_height
+        ):
+            return True
+        return False
 
     tx, tx_error = _fetch_hsd_tx(tx_hash)
     if tx_error:
         tx, tx_error = _fetch_explorer_tx(tx_hash)
     if tx_error or not isinstance(tx, dict):
         return False
+
+    if min_height is not None:
+        tx_height = tx.get('height')
+        if not isinstance(tx_height, int) or tx_height < min_height:
+            return False
 
     expected_name = name.lower().rstrip('/')
     expected_action = covenant_action.upper()
