@@ -1849,6 +1849,103 @@ def get_hsd_status_payload():
     }, 200
 
 
+def _market_event_payload(event):
+    return {
+        "id": event.id,
+        "network": event.network,
+        "name": event.name,
+        "action": event.covenant_action,
+        "txHash": event.tx_hash,
+        "outputIndex": event.output_index,
+        "blockHeight": event.block_height,
+        "blockHash": event.block_hash,
+        "blockTime": event.block_time.isoformat() if event.block_time else None,
+        "source": event.source,
+    }
+
+
+@api_bp.route('/v2/market-index/status', methods=['GET'])
+def market_index_status():
+    from app.models import MarketplaceCovenantEvent, MarketplaceIndexerProgress
+
+    progress = MarketplaceIndexerProgress.query.filter_by(network='main').first()
+    latest_event = (
+        MarketplaceCovenantEvent.query
+        .order_by(MarketplaceCovenantEvent.block_height.desc())
+        .first()
+    )
+    return jsonify({
+        "network": "main",
+        "status": progress.status if progress else "not-started",
+        "lastIndexedHeight": progress.last_indexed_height if progress else None,
+        "targetHeight": progress.target_height if progress else None,
+        "eventsIndexed": progress.events_indexed if progress else 0,
+        "lastError": progress.last_error if progress else None,
+        "updatedAt": progress.updated_at.isoformat() if progress and progress.updated_at else None,
+        "latestEvent": _market_event_payload(latest_event) if latest_event else None,
+    })
+
+
+@api_bp.route('/v2/market-index/refresh', methods=['POST'])
+@limiter.limit("10 per hour")
+def refresh_market_index():
+    auth_error = _require_market_admin()
+    if auth_error:
+        return auth_error
+
+    from app.marketplace_indexer import index_listing_hashes, scan_market_blocks
+
+    data = request.get_json(silent=True) or {}
+    try:
+        lookback = int(data.get('lookback', request.args.get('lookback', 720)))
+        max_blocks = int(data.get('maxBlocks', request.args.get('maxBlocks', lookback)))
+    except (TypeError, ValueError):
+        return jsonify({"error": "lookback and maxBlocks must be integers"}), 400
+
+    try:
+        start_height = data.get('startHeight', request.args.get('startHeight'))
+        end_height = data.get('endHeight', request.args.get('endHeight'))
+        start_height = int(start_height) if start_height not in (None, '') else None
+        end_height = int(end_height) if end_height not in (None, '') else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "startHeight and endHeight must be integers"}), 400
+
+    if lookback < 0 or max_blocks <= 0:
+        return jsonify({"error": "lookback must be >= 0 and maxBlocks must be > 0"}), 400
+    max_blocks = min(max_blocks, 2000)
+
+    try:
+        hash_results = index_listing_hashes()
+        block_result = scan_market_blocks(
+            start_height=start_height,
+            end_height=end_height,
+            lookback=lookback,
+            max_blocks=max_blocks,
+        )
+    except Exception as exc:
+        current_app.logger.exception("Marketplace index refresh failed")
+        return jsonify({"error": str(exc)}), 503
+
+    return jsonify({
+        "success": True,
+        "hashes": hash_results,
+        "blocks": block_result,
+    })
+
+
+@api_bp.route('/v2/market-index/names/<name>', methods=['GET'])
+def market_index_name(name):
+    from app.marketplace_indexer import events_for_name, name_state
+
+    normalized_name = name.lower().rstrip('/')
+    events = events_for_name(normalized_name)
+    return jsonify({
+        "name": normalized_name,
+        "state": name_state(normalized_name),
+        "events": [_market_event_payload(event) for event in events],
+    })
+
+
 @api_bp.route('/v2/listings/<name>/coin', methods=['GET'])
 def listing_coin(name):
     listing = _active_listing_for_name(name)

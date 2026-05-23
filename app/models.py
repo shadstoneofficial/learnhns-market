@@ -139,6 +139,43 @@ class NameIndexerProgress(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class MarketplaceCovenantEvent(db.Model):
+    __tablename__ = 'marketplace_covenant_events'
+
+    id = db.Column(db.Integer, primary_key=True)
+    network = db.Column(db.String(20), default='main', nullable=False, index=True)
+    name = db.Column(db.String(255), nullable=False, index=True)
+    covenant_action = db.Column(db.String(24), nullable=False, index=True)
+    tx_hash = db.Column(db.String(64), nullable=False, index=True)
+    output_index = db.Column(db.Integer, nullable=False, default=0)
+    block_height = db.Column(db.Integer, nullable=True, index=True)
+    block_hash = db.Column(db.String(64), nullable=True, index=True)
+    block_time = db.Column(db.DateTime, nullable=True, index=True)
+    source = db.Column(db.String(40), default='hsd-block', nullable=False, index=True)
+    raw_json = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('network', 'tx_hash', 'output_index', 'covenant_action', 'name', name='uq_market_covenant_event'),
+    )
+
+
+class MarketplaceIndexerProgress(db.Model):
+    __tablename__ = 'marketplace_indexer_progress'
+
+    id = db.Column(db.Integer, primary_key=True)
+    network = db.Column(db.String(20), default='main', nullable=False, unique=True, index=True)
+    status = db.Column(db.String(40), default='not-started', nullable=False, index=True)
+    last_indexed_height = db.Column(db.Integer, nullable=True, index=True)
+    target_height = db.Column(db.Integer, nullable=True, index=True)
+    events_indexed = db.Column(db.Integer, default=0, nullable=False)
+    last_error = db.Column(db.Text, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Account(db.Model):
     __tablename__ = 'accounts'
 

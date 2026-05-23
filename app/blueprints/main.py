@@ -11,6 +11,7 @@ from app.blueprints.api import _name_transfer_status
 from app.blueprints.api import _pending_listing_payload
 from app.blueprints.api import _resolve_sale_pending_listing
 from app.blueprints.api import SHAKEDEX_TRANSFER_LOCKUP
+from app.marketplace_indexer import event_for_tx
 from app.models import Listing, PendingListing
 
 main_bp = Blueprint('main', __name__)
@@ -227,6 +228,15 @@ def _sale_transfer_status(listing):
 
 
 def _sale_tx_transfer_status(transfer_start_tx_hash, finalize_tx_hash=None, name=None):
+    transfer_event = event_for_tx(transfer_start_tx_hash, name=name, action='TRANSFER')
+    if transfer_event and isinstance(transfer_event.block_height, int):
+        return _sale_transfer_status_from_height(
+            transfer_event.block_height,
+            transfer_start_tx_hash,
+            finalize_tx_hash=finalize_tx_hash,
+            name=name,
+        )
+
     tx, tx_error = _fetch_hsd_tx(transfer_start_tx_hash)
     if tx_error:
         tx, tx_error = _fetch_explorer_tx(transfer_start_tx_hash)
@@ -240,6 +250,15 @@ def _sale_tx_transfer_status(transfer_start_tx_hash, finalize_tx_hash=None, name
             "tone": "pending",
         }
 
+    return _sale_transfer_status_from_height(
+        tx_height,
+        transfer_start_tx_hash,
+        finalize_tx_hash=finalize_tx_hash,
+        name=name,
+    )
+
+
+def _sale_transfer_status_from_height(tx_height, transfer_start_tx_hash, finalize_tx_hash=None, name=None):
     if (
         finalize_tx_hash
         and finalize_tx_hash != transfer_start_tx_hash
@@ -275,6 +294,9 @@ def _sale_tx_transfer_status(transfer_start_tx_hash, finalize_tx_hash=None, name
 def _tx_has_name_covenant(tx_hash, name, covenant_action):
     if not tx_hash or not name:
         return False
+
+    if event_for_tx(tx_hash, name=name, action=covenant_action):
+        return True
 
     tx, tx_error = _fetch_hsd_tx(tx_hash)
     if tx_error:

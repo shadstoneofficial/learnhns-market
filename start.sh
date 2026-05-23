@@ -16,6 +16,14 @@ if [ "$PROCESS_TYPE" = "renewal-alerts" ]; then
         --limit "${ALERT_WORKER_LIMIT:-500}"
 fi
 
+if [ "$PROCESS_TYPE" = "marketplace-indexer" ]; then
+    echo "Starting Marketplace Covenant Indexer..."
+    exec python scripts/watch-marketplace-covenants.py \
+        --poll-seconds "${MARKET_INDEXER_POLL_SECONDS:-60}" \
+        --lookback "${MARKET_INDEXER_LOOKBACK:-720}" \
+        --max-blocks "${MARKET_INDEXER_MAX_BLOCKS:-720}"
+fi
+
 # 1. Run Database Migrations
 echo "Running Database Migrations..."
 flask db upgrade
