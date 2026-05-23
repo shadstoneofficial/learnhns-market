@@ -207,6 +207,7 @@
   const count = document.getElementById('market-results-count');
   const empty = document.getElementById('market-empty');
   let currentView = 'grid';
+  let isRestoringFilters = false;
 
   function shouldIgnoreCardNavigation(event) {
     return Boolean(event.target.closest('a, button, input, select, textarea'));
@@ -235,6 +236,42 @@
     return bCreated.localeCompare(aCreated) || aName.localeCompare(bName);
   }
 
+  function setSelectValue(select, value, fallback) {
+    if (!select) return;
+    const allowed = Array.from(select.options).map((option) => option.value);
+    select.value = allowed.includes(value) ? value : fallback;
+  }
+
+  function restoreMarketFiltersFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    isRestoringFilters = true;
+    searchInput.value = params.get('q') || '';
+    setSelectValue(statusSelect, params.get('status') || 'all', 'all');
+    setSelectValue(sortSelect, params.get('sort') || 'newest', 'newest');
+    minInput.value = params.get('min') || '';
+    maxInput.value = params.get('max') || '';
+    minLengthInput.value = params.get('min_chars') || '';
+    maxLengthInput.value = params.get('max_chars') || '';
+    currentView = params.get('view') === 'list' ? 'list' : 'grid';
+    isRestoringFilters = false;
+  }
+
+  function updateMarketUrl() {
+    if (isRestoringFilters) return;
+    const params = new URLSearchParams();
+    const query = (searchInput.value || '').trim();
+    if (query) params.set('q', query);
+    if (statusSelect.value !== 'all') params.set('status', statusSelect.value);
+    if (sortSelect.value !== 'newest') params.set('sort', sortSelect.value);
+    if (minInput.value !== '') params.set('min', minInput.value);
+    if (maxInput.value !== '') params.set('max', maxInput.value);
+    if (minLengthInput.value !== '') params.set('min_chars', minLengthInput.value);
+    if (maxLengthInput.value !== '') params.set('max_chars', maxLengthInput.value);
+    if (currentView !== 'grid') params.set('view', currentView);
+    const next = params.toString() ? `${window.location.pathname}?${params}` : window.location.pathname;
+    window.history.replaceState(null, '', next);
+  }
+
   function applyMarketFilters() {
     const query = (searchInput.value || '').trim().toLowerCase();
     const status = statusSelect.value;
@@ -258,6 +295,7 @@
       const maxLengthMatches = maxLength === null || (lengthKnown && length <= maxLength);
       const show = statusMatches && queryMatches && minMatches && maxMatches && minLengthMatches && maxLengthMatches;
       card.classList.toggle('hidden', !show);
+      card.hidden = !show;
       if (show) visible.push(card);
     }
 
@@ -266,6 +304,7 @@
 
     if (count) count.textContent = `${visible.length} of ${cards.length} listings`;
     if (empty) empty.classList.toggle('hidden', visible.length !== 0);
+    updateMarketUrl();
   }
 
   function setMarketView(view) {
@@ -296,6 +335,7 @@
         details.classList.toggle('sm:text-right', list);
       }
     }
+    updateMarketUrl();
   }
 
   [searchInput, statusSelect, sortSelect, minInput, maxInput, minLengthInput, maxLengthInput].forEach((control) => {
@@ -311,6 +351,8 @@
     maxInput.value = '';
     minLengthInput.value = '';
     maxLengthInput.value = '';
+    currentView = 'grid';
+    setMarketView(currentView);
     applyMarketFilters();
   });
 
@@ -331,6 +373,7 @@
     });
   }
 
+  restoreMarketFiltersFromUrl();
   setMarketView(currentView);
   applyMarketFilters();
 })();

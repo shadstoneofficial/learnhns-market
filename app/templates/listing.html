@@ -24,6 +24,8 @@
     {% else %}
         <div class="mb-6 inline-flex rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-gray-700">{{ listing_display_status }}</div>
     {% endif %}
+
+    <div data-listing-buy-anchor></div>
     
     <div class="mb-8 prose text-gray-700">
         {% if listing.description %}
@@ -126,7 +128,7 @@
     {% endif %}
     
     {% if bob_deep_link %}
-    <div class="text-center mt-10">
+    <div data-buy-panel class="text-center mt-6 mb-8">
         {% if hsd_readiness and not hsd_readiness.ready %}
         <div class="mb-5 rounded-md border {% if hsd_readiness.reachable %}border-amber-200 bg-amber-50 text-amber-900{% else %}border-red-200 bg-red-50 text-red-900{% endif %} p-4 text-left">
             <p class="font-semibold">Bob SPV buying is waiting for market node sync.</p>
@@ -164,6 +166,13 @@
             </p>
         </div>
     </div>
+    <script>
+      (() => {
+        const buyPanel = document.querySelector('[data-buy-panel]');
+        const anchor = document.querySelector('[data-listing-buy-anchor]');
+        if (buyPanel && anchor) anchor.replaceWith(buyPanel);
+      })();
+    </script>
     <script id="listing-proof-json" type="application/json">{{ listing.proof_json | tojson }}</script>
     <script>
       (() => {
