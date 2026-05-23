@@ -88,7 +88,7 @@ def covenant_name(covenant):
 def tx_hash(tx):
     if not isinstance(tx, dict):
         return None
-    value = tx.get('hash') or tx.get('txid') or tx.get('id')
+    value = tx.get('txid') or tx.get('id') or tx.get('hash')
     if isinstance(value, str) and len(value) == 64:
         return value.lower()
     return None
