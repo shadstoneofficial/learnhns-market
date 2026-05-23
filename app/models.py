@@ -22,6 +22,7 @@ class Listing(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     sold_at = db.Column(db.DateTime, nullable=True, index=True)
     sale_tx_hash = db.Column(db.String(64), nullable=True, index=True)
+    transfer_start_tx_hash = db.Column(db.String(64), nullable=True, index=True)
     cancelled_at = db.Column(db.DateTime, nullable=True, index=True)
     cancel_tx_hash = db.Column(db.String(64), nullable=True, index=True)
     expires_at = db.Column(db.DateTime, nullable=True)

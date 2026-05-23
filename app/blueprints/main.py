@@ -202,37 +202,17 @@ def _listing_history(name):
 
 
 def _sale_transfer_status(listing):
-    if listing.status not in {'sold', 'completed'} or not listing.sale_tx_hash:
+    if listing.status not in {'sold', 'completed'}:
         return None
 
-    sale_tx_hash = listing.sale_tx_hash.lower()
-    transfer_status = _name_transfer_status(listing.name)
+    transfer_start_tx_hash = (listing.transfer_start_tx_hash or '').lower()
+    if not transfer_start_tx_hash:
+        return {
+            "label": "Transfer start tx not recorded",
+            "tone": "pending",
+        }
 
-    if transfer_status.get('ownerTxHash') == sale_tx_hash:
-        status = transfer_status.get('status')
-        if status == 'finalized':
-            return {
-                "label": "Finalized by buyer",
-                "tone": "complete",
-            }
-        if status == 'ready-to-finalize':
-            return {
-                "label": "Ready for buyer finalize",
-                "tone": "ready",
-            }
-        if status == 'transfer-lockup':
-            blocks = transfer_status.get('blocksUntilFinalize')
-            if isinstance(blocks, int):
-                return {
-                    "label": f"Buyer finalize in {blocks} blocks",
-                    "tone": "pending",
-                }
-            return {
-                "label": "Waiting for buyer finalize",
-                "tone": "pending",
-            }
-
-    tx_status = _sale_tx_transfer_status(sale_tx_hash)
+    tx_status = _sale_tx_transfer_status(transfer_start_tx_hash)
     if tx_status:
         return tx_status
 
@@ -242,10 +222,10 @@ def _sale_transfer_status(listing):
     }
 
 
-def _sale_tx_transfer_status(sale_tx_hash):
-    tx, tx_error = _fetch_hsd_tx(sale_tx_hash)
+def _sale_tx_transfer_status(transfer_start_tx_hash):
+    tx, tx_error = _fetch_hsd_tx(transfer_start_tx_hash)
     if tx_error:
-        tx, tx_error = _fetch_explorer_tx(sale_tx_hash)
+        tx, tx_error = _fetch_explorer_tx(transfer_start_tx_hash)
     if tx_error or not isinstance(tx, dict):
         return None
 
@@ -273,7 +253,7 @@ def _sale_tx_transfer_status(sale_tx_hash):
         }
 
     return {
-        "label": "Ready for buyer finalize",
+        "label": "288-block transfer wait complete; buyer can finalize",
         "tone": "ready",
     }
 

@@ -569,12 +569,14 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
         listing.status = 'sold'
         listing.sold_at = datetime.utcnow()
         listing.sale_tx_hash = sale_tx_hash
+        listing.transfer_start_tx_hash = listing.transfer_start_tx_hash or sale_tx_hash
         db.session.commit()
         return True, {
             "sold": True,
             "status": listing.status,
             "soldAt": listing.sold_at.isoformat(),
             "saleTxHash": listing.sale_tx_hash,
+            "transferStartTxHash": listing.transfer_start_tx_hash,
             "verificationSource": verification_source,
             "url": f"/listing/{listing.name}",
         }, 200
@@ -1465,6 +1467,7 @@ def sales():
                 "createdAt": listing.created_at.isoformat() if listing.created_at else None,
                 "soldAt": listing.sold_at.isoformat() if listing.sold_at else None,
                 "saleTxHash": listing.sale_tx_hash,
+                "transferStartTxHash": listing.transfer_start_tx_hash,
                 "expiresAt": listing.expires_at.isoformat() if listing.expires_at else None,
                 "url": f"/listing/{listing.name}",
             }
@@ -1517,6 +1520,7 @@ def record_private_sale():
             "priceHns": float(existing_sale.price_hns),
             "status": existing_sale.status,
             "saleTxHash": existing_sale.sale_tx_hash,
+            "transferStartTxHash": existing_sale.transfer_start_tx_hash,
             "url": f"/listing/{existing_sale.name}",
         })
 
@@ -1542,6 +1546,7 @@ def record_private_sale():
                 "name": name,
                 "privateSale": True,
                 "saleTxHash": sale_tx_hash,
+                "transferStartTxHash": sale_tx_hash,
                 "ownerOutputIndex": transfer_status.get('ownerOutputIndex'),
             },
             status='sold',
@@ -1553,6 +1558,7 @@ def record_private_sale():
     listing.status = 'sold'
     listing.sold_at = datetime.utcnow()
     listing.sale_tx_hash = sale_tx_hash
+    listing.transfer_start_tx_hash = sale_tx_hash
     db.session.commit()
 
     return jsonify({
@@ -1564,9 +1570,83 @@ def record_private_sale():
         "status": listing.status,
         "soldAt": listing.sold_at.isoformat(),
         "saleTxHash": listing.sale_tx_hash,
+        "transferStartTxHash": listing.transfer_start_tx_hash,
         "verificationSource": "name-owner",
         "url": f"/listing/{listing.name}",
     }), 201 if created else 200
+
+
+@api_bp.route('/v2/sales/transfer-start', methods=['POST'])
+@limiter.limit("40 per hour")
+def update_sale_transfer_start():
+    auth_error = _require_market_admin()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json(silent=True) or {}
+    request_values = {**request.args.to_dict(), **data}
+    transfer_start_tx_hash, transfer_hash_error = _validate_hex_hash(
+        request_values.get('transferStartTxHash', request_values.get('transfer_start_tx_hash')),
+        'transferStartTxHash',
+    )
+    if transfer_hash_error:
+        message, status = transfer_hash_error
+        return jsonify({"error": message}), status
+    if not transfer_start_tx_hash:
+        return jsonify({"error": "transferStartTxHash is required"}), 400
+
+    sale_tx_hash, sale_hash_error = _validate_hex_hash(
+        request_values.get('saleTxHash', request_values.get('sale_tx_hash')),
+        'saleTxHash',
+    )
+    if sale_hash_error:
+        message, status = sale_hash_error
+        return jsonify({"error": message}), status
+
+    listing = None
+    listing_id = request_values.get('listingId', request_values.get('listing_id'))
+    if listing_id:
+        try:
+            listing = Listing.query.get(int(listing_id))
+        except (TypeError, ValueError):
+            return jsonify({"error": "listingId must be an integer"}), 400
+    else:
+        name = str(request_values.get('name', '')).strip().lower().rstrip('/')
+        if not name:
+            return jsonify({"error": "name or listingId is required"}), 400
+
+        query = Listing.query.filter(
+            Listing.name == name,
+            Listing.status.in_(('sold', 'completed')),
+        )
+        if sale_tx_hash:
+            query = query.filter(Listing.sale_tx_hash == sale_tx_hash)
+        listing = query.order_by(Listing.sold_at.desc(), Listing.created_at.desc()).first()
+
+    if not listing:
+        return jsonify({"error": "Listing not found"}), 404
+    if listing.status not in {'sold', 'completed'}:
+        return jsonify({"error": "Only sold listings can store a transfer start transaction"}), 409
+    if sale_tx_hash and listing.sale_tx_hash != sale_tx_hash:
+        return jsonify({"error": "saleTxHash does not match this listing"}), 409
+
+    listing.transfer_start_tx_hash = transfer_start_tx_hash
+    if isinstance(listing.proof_json, dict):
+        proof_json = dict(listing.proof_json)
+        proof_json["transferStartTxHash"] = transfer_start_tx_hash
+        listing.proof_json = proof_json
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "id": listing.id,
+        "name": listing.name,
+        "priceHns": float(listing.price_hns),
+        "status": listing.status,
+        "saleTxHash": listing.sale_tx_hash,
+        "transferStartTxHash": listing.transfer_start_tx_hash,
+        "url": f"/listing/{listing.name}",
+    })
 
 
 @api_bp.route('/v2/listings/archive', methods=['POST'])

@@ -33,6 +33,11 @@
                 {% if listing.sale_transfer_status %}
                     <div class="mt-2 text-xs text-gray-500">{{ listing.sale_transfer_status.label }}</div>
                 {% endif %}
+                {% if listing.transfer_start_tx_hash and listing.transfer_start_tx_hash != listing.sale_tx_hash %}
+                    <div class="mt-1 text-xs">
+                        <a href="https://shakeshift.com/transaction/{{ listing.transfer_start_tx_hash }}" class="text-indigo-700 hover:underline" target="_blank" rel="noopener">Transfer start tx</a>
+                    </div>
+                {% endif %}
             {% elif listing.status == 'cancelled' %}
                 <span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">Cancelled</span>
             {% else %}
