@@ -838,6 +838,20 @@ def _fetch_explorer_tx(tx_hash):
             },
         })
 
+    outputs = []
+    for match in re.finditer(
+        r'<div\b[^>]*id=["\']output-(\d+)["\'][^>]*>.*?<button[^>]*>\s*([^<]+?)\s*</button>\s*<a\b[^>]*href=["\']/name/([^"\']+)["\']',
+        html,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        outputs.append({
+            "index": int(match.group(1)),
+            "covenant": {
+                "action": match.group(2).strip().upper(),
+                "name": match.group(3).strip().lower().rstrip('/'),
+            },
+        })
+
     if not inputs:
         return None, ("Transaction explorer fallback returned no transaction inputs", 503, html[:500])
 
@@ -845,6 +859,7 @@ def _fetch_explorer_tx(tx_hash):
         "hash": tx_hash,
         "height": height,
         "inputs": inputs,
+        "outputs": outputs,
         "source": "tx-explorer",
     }, None
 

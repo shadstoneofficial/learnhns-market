@@ -212,7 +212,11 @@ def _sale_transfer_status(listing):
             "tone": "pending",
         }
 
-    tx_status = _sale_tx_transfer_status(transfer_start_tx_hash)
+    tx_status = _sale_tx_transfer_status(
+        transfer_start_tx_hash,
+        finalize_tx_hash=(listing.sale_tx_hash or '').lower(),
+        name=listing.name,
+    )
     if tx_status:
         return tx_status
 
@@ -222,7 +226,7 @@ def _sale_transfer_status(listing):
     }
 
 
-def _sale_tx_transfer_status(transfer_start_tx_hash):
+def _sale_tx_transfer_status(transfer_start_tx_hash, finalize_tx_hash=None, name=None):
     tx, tx_error = _fetch_hsd_tx(transfer_start_tx_hash)
     if tx_error:
         tx, tx_error = _fetch_explorer_tx(transfer_start_tx_hash)
@@ -234,6 +238,16 @@ def _sale_tx_transfer_status(transfer_start_tx_hash):
         return {
             "label": "Sale tx waiting for confirmation",
             "tone": "pending",
+        }
+
+    if (
+        finalize_tx_hash
+        and finalize_tx_hash != transfer_start_tx_hash
+        and _tx_has_name_covenant(finalize_tx_hash, name, 'FINALIZE')
+    ):
+        return {
+            "label": "Buyer finalized transfer",
+            "tone": "complete",
         }
 
     chain_payload, chain_status = get_hsd_status_payload()
@@ -256,6 +270,42 @@ def _sale_tx_transfer_status(transfer_start_tx_hash):
         "label": "288-block transfer wait complete; buyer can finalize",
         "tone": "ready",
     }
+
+
+def _tx_has_name_covenant(tx_hash, name, covenant_action):
+    if not tx_hash or not name:
+        return False
+
+    tx, tx_error = _fetch_hsd_tx(tx_hash)
+    if tx_error:
+        tx, tx_error = _fetch_explorer_tx(tx_hash)
+    if tx_error or not isinstance(tx, dict):
+        return False
+
+    expected_name = name.lower().rstrip('/')
+    expected_action = covenant_action.upper()
+    for output in tx.get('outputs', []):
+        if not isinstance(output, dict):
+            continue
+
+        covenant = output.get('covenant') if isinstance(output.get('covenant'), dict) else {}
+        action = str(
+            covenant.get('action')
+            or covenant.get('type')
+            or output.get('action')
+            or ''
+        ).upper()
+
+        output_name = str(
+            covenant.get('name')
+            or output.get('name')
+            or ''
+        ).lower().rstrip('/')
+
+        if action == expected_action and output_name == expected_name:
+            return True
+
+    return False
 
 
 def _name_profile_payload(name):
