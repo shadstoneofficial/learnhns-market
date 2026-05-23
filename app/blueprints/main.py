@@ -4,10 +4,13 @@ from urllib.parse import quote
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 from app.blueprints.api import get_hsd_status_payload
 from app.blueprints.api import _active_listings_unique_by_name
+from app.blueprints.api import _fetch_explorer_tx
+from app.blueprints.api import _fetch_hsd_tx
 from app.blueprints.api import _fetch_hsd_name_info
 from app.blueprints.api import _name_transfer_status
 from app.blueprints.api import _pending_listing_payload
 from app.blueprints.api import _resolve_sale_pending_listing
+from app.blueprints.api import SHAKEDEX_TRANSFER_LOCKUP
 from app.models import Listing, PendingListing
 
 main_bp = Blueprint('main', __name__)
@@ -202,34 +205,77 @@ def _sale_transfer_status(listing):
     if listing.status not in {'sold', 'completed'} or not listing.sale_tx_hash:
         return None
 
+    sale_tx_hash = listing.sale_tx_hash.lower()
     transfer_status = _name_transfer_status(listing.name)
-    if transfer_status.get('ownerTxHash') != listing.sale_tx_hash:
-        return None
 
-    status = transfer_status.get('status')
-    if status == 'finalized':
-        return {
-            "label": "Finalized by buyer",
-            "tone": "complete",
-        }
-    if status == 'ready-to-finalize':
-        return {
-            "label": "Ready for buyer finalize",
-            "tone": "ready",
-        }
-    if status == 'transfer-lockup':
-        blocks = transfer_status.get('blocksUntilFinalize')
-        if isinstance(blocks, int):
+    if transfer_status.get('ownerTxHash') == sale_tx_hash:
+        status = transfer_status.get('status')
+        if status == 'finalized':
             return {
-                "label": f"Buyer finalize in {blocks} blocks",
+                "label": "Finalized by buyer",
+                "tone": "complete",
+            }
+        if status == 'ready-to-finalize':
+            return {
+                "label": "Ready for buyer finalize",
+                "tone": "ready",
+            }
+        if status == 'transfer-lockup':
+            blocks = transfer_status.get('blocksUntilFinalize')
+            if isinstance(blocks, int):
+                return {
+                    "label": f"Buyer finalize in {blocks} blocks",
+                    "tone": "pending",
+                }
+            return {
+                "label": "Waiting for buyer finalize",
                 "tone": "pending",
             }
+
+    tx_status = _sale_tx_transfer_status(sale_tx_hash)
+    if tx_status:
+        return tx_status
+
+    return {
+        "label": "Checking buyer finalize status",
+        "tone": "pending",
+    }
+
+
+def _sale_tx_transfer_status(sale_tx_hash):
+    tx, tx_error = _fetch_hsd_tx(sale_tx_hash)
+    if tx_error:
+        tx, tx_error = _fetch_explorer_tx(sale_tx_hash)
+    if tx_error or not isinstance(tx, dict):
+        return None
+
+    tx_height = tx.get('height')
+    if not isinstance(tx_height, int) or tx_height < 0:
         return {
-            "label": "Waiting for buyer finalize",
+            "label": "Sale tx waiting for confirmation",
             "tone": "pending",
         }
 
-    return None
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+    if not isinstance(chain_height, int):
+        return {
+            "label": "Checking buyer finalize status",
+            "tone": "pending",
+        }
+
+    unlock_height = tx_height + SHAKEDEX_TRANSFER_LOCKUP
+    blocks = max(unlock_height - chain_height, 0)
+    if blocks > 0:
+        return {
+            "label": f"Buyer finalize in {blocks} blocks",
+            "tone": "pending",
+        }
+
+    return {
+        "label": "Ready for buyer finalize",
+        "tone": "ready",
+    }
 
 
 def _name_profile_payload(name):

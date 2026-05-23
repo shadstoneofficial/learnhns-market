@@ -813,6 +813,13 @@ def _fetch_explorer_tx(tx_hash):
     if tx_hash not in html:
         return None, ("Transaction explorer fallback returned an unexpected page", 503, html[:500])
 
+    height = None
+    height_match = re.search(r'data-height=["\'](\d+)["\']', html, re.IGNORECASE)
+    if not height_match:
+        height_match = re.search(r'href=["\']/block/(\d+)(?:["\'/])', html, re.IGNORECASE)
+    if height_match:
+        height = int(height_match.group(1))
+
     inputs = []
     for match in re.finditer(
         r'<a\b(?=[^>]*data-tooltip=["\']input["\'])(?=[^>]*href=["\'][^"\']*/transaction/([a-f0-9]{64})#output-(\d+)["\'])[^>]*>',
@@ -831,6 +838,7 @@ def _fetch_explorer_tx(tx_hash):
 
     return {
         "hash": tx_hash,
+        "height": height,
         "inputs": inputs,
         "source": "tx-explorer",
     }, None
