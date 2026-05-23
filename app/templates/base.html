@@ -73,7 +73,12 @@
                 <a href="{{ url_for('account.gfavip_login', next=request.full_path if request.query_string else request.path) }}" class="font-medium text-indigo-600 hover:text-indigo-700">Login with GFAVIP</a>
             {% endif %}
         </nav>
-        <p>&copy; 2026 LearnHNS Market.</p>
+        <p>
+            &copy; 2026 LearnHNS Market.
+            <a href="https://shakedex.org/markets" target="_blank" rel="noopener noreferrer" class="ml-1 font-medium text-indigo-600 hover:text-indigo-700">
+                Learn HNS Market is a Shakedex Channel. Want to run your own or learn more?
+            </a>
+        </p>
     </footer>
     {% if current_account %}
     <script>
