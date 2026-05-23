@@ -555,7 +555,7 @@ def _tx_is_current_name_owner_transfer(name, tx_hash):
     return True, transfer_status
 
 
-def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
+def _mark_listing_sold_if_spent(listing, sale_tx_hash=None, transfer_start_tx_hash=None):
     tx_hash, output_index = _listing_coin_ref(listing)
 
     if sale_tx_hash:
@@ -569,7 +569,10 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None):
         listing.status = 'sold'
         listing.sold_at = datetime.utcnow()
         listing.sale_tx_hash = sale_tx_hash
-        listing.transfer_start_tx_hash = listing.transfer_start_tx_hash or sale_tx_hash
+        if transfer_start_tx_hash:
+            listing.transfer_start_tx_hash = transfer_start_tx_hash
+        elif not listing.transfer_start_tx_hash and verification_source != "name-owner":
+            listing.transfer_start_tx_hash = sale_tx_hash
         db.session.commit()
         return True, {
             "sold": True,
@@ -1890,6 +1893,14 @@ def refresh_listing_status(name):
         message, status = sale_hash_error
         return jsonify({"error": message}), status
 
+    transfer_start_tx_hash, transfer_hash_error = _validate_hex_hash(
+        request_values.get('transferStartTxHash', request_values.get('transfer_start_tx_hash')),
+        'transferStartTxHash',
+    )
+    if transfer_hash_error:
+        message, status = transfer_hash_error
+        return jsonify({"error": message}), status
+
     cancel_tx_hash, cancel_hash_error = _validate_hex_hash(
         request_values.get('cancelTxHash', request_values.get('cancel_tx_hash')),
         'cancelTxHash',
@@ -1921,7 +1932,11 @@ def refresh_listing_status(name):
     if not listing or listing.is_expired():
         return jsonify({"error": "Listing not found"}), 404
 
-    _, payload, status = _mark_listing_sold_if_spent(listing, sale_tx_hash or None)
+    _, payload, status = _mark_listing_sold_if_spent(
+        listing,
+        sale_tx_hash or None,
+        transfer_start_tx_hash or None,
+    )
     return jsonify(payload), status
 
 
