@@ -71,7 +71,7 @@
             {% if current_account %}
                 <button type="button" data-watch-name="{{ pending.name }}" class="rounded border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50">Watch listing</button>
             {% else %}
-                <a href="{{ url_for('account.gfavip_login', next=url_for('main.listing_detail', name=pending.name)) }}" class="inline-block rounded border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50">Login to watch</a>
+                <a href="{{ url_for('account.login_page', next=url_for('main.listing_detail', name=pending.name)) }}" class="inline-block rounded border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50">Login to watch</a>
             {% endif %}
         </div>
     </div>

@@ -1,7 +1,8 @@
 import json
 from urllib.parse import quote
+from xml.sax.saxutils import escape
 
-from flask import Blueprint, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, Response, current_app, make_response, jsonify, redirect, render_template, request, url_for
 from app.blueprints.api import get_hsd_status_payload
 from app.blueprints.api import _active_listings_unique_by_name
 from app.blueprints.api import _fetch_explorer_tx
@@ -79,7 +80,78 @@ def docs():
 
 @main_bp.route('/admin')
 def admin():
-    return render_template('admin.html')
+    if not _has_admin_page_access():
+        response = make_response(render_template('404.html'), 404)
+        response.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive'
+        return response
+
+    response = make_response(render_template('admin.html'))
+    response.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive'
+    return response
+
+
+@main_bp.route('/robots.txt')
+def robots_txt():
+    body = "\n".join([
+        "User-agent: *",
+        "Disallow: /admin",
+        "",
+        "Sitemap: https://market.learnhns.com/sitemap.xml",
+        "",
+    ])
+    return Response(body, mimetype='text/plain')
+
+
+@main_bp.route('/sitemap.xml')
+def sitemap_xml():
+    base_url = 'https://market.learnhns.com'
+    urls = [
+        (url_for('main.index'), 'daily', '1.0'),
+        (url_for('main.sold'), 'hourly', '0.8'),
+        (url_for('main.pending'), 'hourly', '0.8'),
+        (url_for('main.docs'), 'monthly', '0.5'),
+        (url_for('main.status'), 'daily', '0.4'),
+        (url_for('main.llms_txt'), 'weekly', '0.4'),
+        (url_for('main.skill_md'), 'weekly', '0.4'),
+    ]
+    for listing in Listing.query.order_by(Listing.created_at.desc()).limit(500).all():
+        urls.append((url_for('main.listing_detail', name=listing.name), 'daily', '0.7'))
+    for pending in PendingListing.query.order_by(PendingListing.created_at.desc()).limit(200).all():
+        urls.append((url_for('main.listing_detail', name=pending.name), 'daily', '0.6'))
+
+    entries = []
+    seen = set()
+    for path, changefreq, priority in urls:
+        loc = f"{base_url}{path}"
+        if loc in seen:
+            continue
+        seen.add(loc)
+        entries.append(
+            "  <url>\n"
+            f"    <loc>{escape(loc)}</loc>\n"
+            f"    <changefreq>{changefreq}</changefreq>\n"
+            f"    <priority>{priority}</priority>\n"
+            "  </url>"
+        )
+
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "\n".join(entries)
+        + "\n</urlset>\n"
+    )
+    return Response(body, mimetype='application/xml')
+
+
+@main_bp.route('/llms.txt')
+def llms_txt():
+    return Response(_llms_txt(), mimetype='text/plain')
+
+
+@main_bp.route('/skill.md')
+@main_bp.route('/SKILL.md')
+def skill_md():
+    return Response(_skill_md(), mimetype='text/plain')
 
 
 @main_bp.route('/status')
@@ -200,6 +272,94 @@ def _listing_history(name):
         .order_by(Listing.created_at.desc())
         .all()
     )
+
+
+def _has_admin_page_access():
+    token = current_app.config.get('MARKET_ADMIN_TOKEN')
+    if not token:
+        return True
+
+    submitted = (
+        request.headers.get('X-Market-Admin-Token')
+        or request.args.get('adminToken')
+    )
+    return submitted == token
+
+
+def _llms_txt():
+    return """# LearnHNS Market
+
+LearnHNS Market is a public Shakedex channel for fixed-price Handshake name listings.
+
+Canonical site: https://market.learnhns.com/
+Browse listings: https://market.learnhns.com/
+Sale history: https://market.learnhns.com/sold
+Pending listings: https://market.learnhns.com/pending
+Human login: https://market.learnhns.com/login
+Agent skill: https://market.learnhns.com/skill.md
+Shakedex channels: https://shakedex.org/markets
+
+Agents can read public listings, pending listings, sale history, and listing detail pages without logging in. Buying requires a compatible Handshake wallet that can validate and fill Shakedex proofs, such as Bob LearnHNS or another wallet with HSD access.
+
+Use the public API only for read or wallet-preparation tasks unless the user explicitly authorizes an action. Never submit a purchase, listing, cancellation, or watchlist action without the user's explicit instruction and wallet confirmation.
+"""
+
+
+def _skill_md():
+    return """# LearnHNS Market Agent Skill
+
+Use this skill when an AI agent needs to inspect, explain, or help a human use LearnHNS Market, a Shakedex channel for Handshake names.
+
+## What This App Does
+
+- Lists fixed-price Handshake names for sale using Shakedex proofs.
+- Shows pending listings whose transfer lockup is not complete yet.
+- Shows sold listings and, when available, transfer-start/finalize status using Handshake chain data.
+- Lets signed-in humans save watchlists and renewal alerts.
+
+## Public URLs
+
+- Browse: https://market.learnhns.com/
+- Sold history: https://market.learnhns.com/sold
+- Pending listings: https://market.learnhns.com/pending
+- Docs: https://market.learnhns.com/docs
+- Login page: https://market.learnhns.com/login
+- Machine-readable overview: https://market.learnhns.com/llms.txt
+
+## Login Flow
+
+When a task requires a watchlist, renewal alert, saved account settings, or another account feature:
+
+1. Send the human to `/login?next=<encoded destination>`.
+2. Explain that LearnHNS Market uses GFAVIP SSO for accounts.
+3. The human clicks the GFAVIP login button and completes login on GFAVIP.
+4. GFAVIP redirects back to LearnHNS Market with an account session cookie.
+
+Do not ask the human for their GFAVIP password or token. Do not try to automate private account login unless the human is present and explicitly asks for browser assistance.
+
+## Buying With a Wallet
+
+An AI agent can help prepare a purchase by finding the listing page and explaining the flow, but the wallet owner must approve the transaction.
+
+If the agent has access to an HSD wallet and the human explicitly asks it to buy:
+
+1. Fetch the listing detail page or proof JSON.
+2. Verify the proof network, name, price, lock time, and payment address.
+3. Verify the listing is still active and not expired.
+4. Ask for explicit human confirmation of the exact name and HNS amount.
+5. Use the wallet's Shakedex fill flow to create and broadcast the fill transaction.
+6. Record the transaction hash and remind the human that Handshake transfers require a 288-block wait before buyer finalization.
+
+Never buy, cancel, finalize, or submit a listing without explicit user approval.
+
+## Seller/Sale Status
+
+For sold names, the deterministic transfer status is:
+
+`transfer_start_height + 288 - current_height`
+
+If the transfer-start transaction is not recorded, the site should say that plainly instead of guessing. A buyer finalize only counts after the 288-block transfer lockup is complete.
+"""
 
 
 def _sale_transfer_status(listing):

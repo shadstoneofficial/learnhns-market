@@ -39,7 +39,7 @@ def login_required(view):
             next_url = request.full_path if request.query_string else request.path
             if request.path.startswith('/api/'):
                 return {'error': 'Authentication required'}, 401
-            return redirect(url_for('account.gfavip_login', next=next_url))
+            return redirect(url_for('account.login_page', next=next_url))
         return view(*args, **kwargs)
 
     return wrapped

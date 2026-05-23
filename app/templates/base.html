@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}LearnHNS Market{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}Buy and follow fixed-price Handshake names through LearnHNS Market, a Shakedex channel for Bob LearnHNS and compatible wallets.{% endblock %}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16.png') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png') }}">
@@ -48,7 +49,7 @@
                         </div>
                     </div>
                 {% else %}
-                    <a href="{{ url_for('account.gfavip_login', next=request.full_path if request.query_string else request.path) }}" class="rounded bg-indigo-600 px-3 py-2 text-white font-semibold hover:bg-indigo-700">Login with GFAVIP</a>
+                    <a href="{{ url_for('account.login_page', next=request.full_path if request.query_string else request.path) }}" class="rounded bg-indigo-600 px-3 py-2 text-white font-semibold hover:bg-indigo-700">Login</a>
                 {% endif %}
             </nav>
         </div>
@@ -70,8 +71,10 @@
                 <a href="{{ url_for('account.watchlist_page') }}" class="font-medium text-gray-600 hover:text-indigo-600">Watchlist</a>
                 <a href="{{ url_for('account.alerts_page') }}" class="font-medium text-gray-600 hover:text-indigo-600">Alerts</a>
             {% else %}
-                <a href="{{ url_for('account.gfavip_login', next=request.full_path if request.query_string else request.path) }}" class="font-medium text-indigo-600 hover:text-indigo-700">Login with GFAVIP</a>
+                <a href="{{ url_for('account.login_page', next=request.full_path if request.query_string else request.path) }}" class="font-medium text-indigo-600 hover:text-indigo-700">Login</a>
             {% endif %}
+            <a href="{{ url_for('main.llms_txt') }}" class="font-medium text-gray-600 hover:text-indigo-600">llms.txt</a>
+            <a href="{{ url_for('main.skill_md') }}" class="font-medium text-gray-600 hover:text-indigo-600">skill.md</a>
         </nav>
         <p>
             &copy; 2026 LearnHNS Market.

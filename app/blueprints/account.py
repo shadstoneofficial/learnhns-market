@@ -29,6 +29,16 @@ from app.models import (
 account_bp = Blueprint('account', __name__)
 
 
+@account_bp.route('/login')
+def login_page():
+    next_url = request.args.get('next') or url_for('account.watchlist_page')
+    return render_template(
+        'login.html',
+        next_url=next_url,
+        gfavip_login_url=gfavip_authorize_url(next_url),
+    )
+
+
 @account_bp.route('/auth/gfavip/login')
 def gfavip_login():
     return redirect(gfavip_authorize_url(request.args.get('next')))

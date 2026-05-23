@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
-{% block title %}{{ display_name(pending.name) }} pending listing | LearnHNS Market{% endblock %}
+{% block title %}{{ display_name(pending.name) }} | Pending listing | LearnHNS Market{% endblock %}
+{% block meta_description %}{{ display_name(pending.name) }} is pending on LearnHNS Market while its Handshake transfer lockup completes.{% endblock %}
 
 {% block content %}
 <div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-100">
@@ -60,7 +61,7 @@
                 <button type="button" data-watch-name="{{ pending.name }}" class="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Watch listing</button>
                 <span id="watch-message" class="ml-3 text-sm font-medium"></span>
             {% else %}
-                <a href="{{ url_for('account.gfavip_login', next=request.path) }}" class="inline-block rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Login with GFAVIP to watch</a>
+                <a href="{{ url_for('account.login_page', next=request.path) }}" class="inline-block rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Login to watch</a>
             {% endif %}
         </div>
     </div>
