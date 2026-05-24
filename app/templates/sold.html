@@ -43,11 +43,13 @@
             <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Max HNS</span>
             <input id="sold-filter-max-price" type="number" min="0" step="0.01" placeholder="Any" class="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
         </label>
-        <label class="flex items-end">
-            <span class="flex min-h-[42px] w-full items-center justify-between gap-3 rounded border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">
-                <span>Emoji / punycode</span>
-                <input id="sold-filter-punycode" type="checkbox" checked class="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-            </span>
+        <label class="block">
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Name Type</span>
+            <select id="sold-filter-punycode" class="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="all">All names</option>
+                <option value="only">Emoji / punycode only</option>
+                <option value="hide">No emoji / punycode</option>
+            </select>
         </label>
     </div>
     <div class="mt-3 flex flex-col gap-3 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
@@ -150,7 +152,7 @@
   const sortSelect = document.getElementById('sold-sort');
   const minInput = document.getElementById('sold-filter-min-price');
   const maxInput = document.getElementById('sold-filter-max-price');
-  const punycodeInput = document.getElementById('sold-filter-punycode');
+  const punycodeSelect = document.getElementById('sold-filter-punycode');
   const resetButton = document.getElementById('sold-filter-reset');
   const count = document.getElementById('sold-results-count');
   const empty = document.getElementById('sold-empty');
@@ -191,7 +193,7 @@
     setSelectValue(sortSelect, params.get('sort') || 'date-desc', 'date-desc');
     minInput.value = params.get('min') || '';
     maxInput.value = params.get('max') || '';
-    punycodeInput.checked = params.get('punycode') !== 'hide';
+    setSelectValue(punycodeSelect, params.get('punycode') || 'all', 'all');
     isRestoringFilters = false;
   }
 
@@ -204,7 +206,7 @@
     if (sortSelect.value !== 'date-desc') params.set('sort', sortSelect.value);
     if (minInput.value !== '') params.set('min', minInput.value);
     if (maxInput.value !== '') params.set('max', maxInput.value);
-    if (!punycodeInput.checked) params.set('punycode', 'hide');
+    if (punycodeSelect.value !== 'all') params.set('punycode', punycodeSelect.value);
     const next = params.toString() ? `${window.location.pathname}?${params}` : window.location.pathname;
     window.history.replaceState(null, '', next);
   }
@@ -214,7 +216,7 @@
     const status = statusSelect.value;
     const minPrice = minInput.value === '' ? null : Number(minInput.value);
     const maxPrice = maxInput.value === '' ? null : Number(maxInput.value);
-    const showPunycode = punycodeInput.checked;
+    const punycodeMode = punycodeSelect.value;
     const visible = [];
 
     for (const row of rows) {
@@ -228,7 +230,9 @@
       const queryMatches = !query || name.includes(query) || displayName.includes(query) || proof.includes(query) || transfer.includes(query);
       const minMatches = minPrice === null || (priceKnown && price >= minPrice);
       const maxMatches = maxPrice === null || (priceKnown && price <= maxPrice);
-      const punycodeMatches = showPunycode || row.dataset.punycode !== 'true';
+      const punycodeMatches = punycodeMode === 'all'
+        || (punycodeMode === 'only' && row.dataset.punycode === 'true')
+        || (punycodeMode === 'hide' && row.dataset.punycode !== 'true');
       const show = statusMatches && queryMatches && minMatches && maxMatches && punycodeMatches;
       row.classList.toggle('hidden', !show);
       row.hidden = !show;
@@ -243,7 +247,7 @@
     updateSoldUrl();
   }
 
-  [searchInput, statusSelect, sortSelect, minInput, maxInput, punycodeInput].forEach((control) => {
+  [searchInput, statusSelect, sortSelect, minInput, maxInput, punycodeSelect].forEach((control) => {
     control.addEventListener('input', applySoldFilters);
     control.addEventListener('change', applySoldFilters);
   });
@@ -254,7 +258,7 @@
     sortSelect.value = 'date-desc';
     minInput.value = '';
     maxInput.value = '';
-    punycodeInput.checked = true;
+    punycodeSelect.value = 'all';
     applySoldFilters();
   });
 
