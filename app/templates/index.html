@@ -31,7 +31,7 @@
 {% endif %}
 
 <div class="mb-6 rounded-lg border border-gray-100 bg-white p-4 shadow-sm">
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <label class="block">
             <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Search</span>
             <input id="market-filter-search" type="search" placeholder="Name contains..." class="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
@@ -71,6 +71,12 @@
             <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Max Chars</span>
             <input id="market-filter-max-length" type="number" min="1" step="1" placeholder="Any" class="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
         </label>
+        <label class="flex items-end">
+            <span class="flex min-h-[42px] w-full items-center justify-between gap-3 rounded border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">
+                <span>Emoji / punycode</span>
+                <input id="market-filter-punycode" type="checkbox" checked class="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+            </span>
+        </label>
     </div>
     <div class="mt-3 flex flex-col gap-3 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
         <span id="market-results-count"></span>
@@ -91,6 +97,8 @@
          data-href="{{ url_for('main.listing_detail', name=listing.name) }}"
          data-status="available"
          data-name="{{ listing.name }}"
+         data-display-name="{{ display_name(listing.name) }}"
+         data-punycode="{{ 'true' if listing.name.startswith('xn--') else 'false' }}"
          data-price="{{ listing.price_hns }}"
          data-length="{{ listing.name|length }}"
          data-created="{{ listing.created_at.isoformat() if listing.created_at else '' }}"
@@ -140,6 +148,8 @@
          data-href="{{ url_for('main.listing_detail', name=pending.name) }}"
          data-status="pending"
          data-name="{{ pending.name }}"
+         data-display-name="{{ display_name(pending.name) }}"
+         data-punycode="{{ 'true' if pending.name.startswith('xn--') else 'false' }}"
          data-price="{{ pending.expectedPrice / 1000000 if pending.expectedPrice else '' }}"
          data-length="{{ pending.name|length }}"
          data-created="{{ pending.createdAt or '' }}"
@@ -201,6 +211,7 @@
   const maxInput = document.getElementById('market-filter-max-price');
   const minLengthInput = document.getElementById('market-filter-min-length');
   const maxLengthInput = document.getElementById('market-filter-max-length');
+  const punycodeInput = document.getElementById('market-filter-punycode');
   const resetButton = document.getElementById('market-filter-reset');
   const gridButton = document.getElementById('market-view-grid');
   const listButton = document.getElementById('market-view-list');
@@ -252,6 +263,7 @@
     maxInput.value = params.get('max') || '';
     minLengthInput.value = params.get('min_chars') || '';
     maxLengthInput.value = params.get('max_chars') || '';
+    punycodeInput.checked = params.get('punycode') !== 'hide';
     currentView = params.get('view') === 'list' ? 'list' : 'grid';
     isRestoringFilters = false;
   }
@@ -267,6 +279,7 @@
     if (maxInput.value !== '') params.set('max', maxInput.value);
     if (minLengthInput.value !== '') params.set('min_chars', minLengthInput.value);
     if (maxLengthInput.value !== '') params.set('max_chars', maxLengthInput.value);
+    if (!punycodeInput.checked) params.set('punycode', 'hide');
     if (currentView !== 'grid') params.set('view', currentView);
     const next = params.toString() ? `${window.location.pathname}?${params}` : window.location.pathname;
     window.history.replaceState(null, '', next);
@@ -279,21 +292,24 @@
     const maxPrice = maxInput.value === '' ? null : Number(maxInput.value);
     const minLength = minLengthInput.value === '' ? null : Number(minLengthInput.value);
     const maxLength = maxLengthInput.value === '' ? null : Number(maxLengthInput.value);
+    const showPunycode = punycodeInput.checked;
     const visible = [];
 
     for (const card of cards) {
       const name = (card.dataset.name || '').toLowerCase();
+      const displayName = (card.dataset.displayName || '').toLowerCase();
       const price = Number(card.dataset.price);
       const length = Number(card.dataset.length);
       const priceKnown = Number.isFinite(price);
       const lengthKnown = Number.isFinite(length);
       const statusMatches = status === 'all' || card.dataset.status === status;
-      const queryMatches = !query || name.includes(query);
+      const queryMatches = !query || name.includes(query) || displayName.includes(query);
       const minMatches = minPrice === null || (priceKnown && price >= minPrice);
       const maxMatches = maxPrice === null || (priceKnown && price <= maxPrice);
       const minLengthMatches = minLength === null || (lengthKnown && length >= minLength);
       const maxLengthMatches = maxLength === null || (lengthKnown && length <= maxLength);
-      const show = statusMatches && queryMatches && minMatches && maxMatches && minLengthMatches && maxLengthMatches;
+      const punycodeMatches = showPunycode || card.dataset.punycode !== 'true';
+      const show = statusMatches && queryMatches && minMatches && maxMatches && minLengthMatches && maxLengthMatches && punycodeMatches;
       card.classList.toggle('hidden', !show);
       card.hidden = !show;
       if (show) visible.push(card);
@@ -338,7 +354,7 @@
     updateMarketUrl();
   }
 
-  [searchInput, statusSelect, sortSelect, minInput, maxInput, minLengthInput, maxLengthInput].forEach((control) => {
+  [searchInput, statusSelect, sortSelect, minInput, maxInput, minLengthInput, maxLengthInput, punycodeInput].forEach((control) => {
     control.addEventListener('input', applyMarketFilters);
     control.addEventListener('change', applyMarketFilters);
   });
@@ -351,6 +367,7 @@
     maxInput.value = '';
     minLengthInput.value = '';
     maxLengthInput.value = '';
+    punycodeInput.checked = true;
     currentView = 'grid';
     setMarketView(currentView);
     applyMarketFilters();
