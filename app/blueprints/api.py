@@ -13,6 +13,7 @@ from app.utils import (
     send_gfavip_webhook,
 )
 import os
+import hmac
 import json
 import re
 from datetime import datetime, timedelta
@@ -255,6 +256,73 @@ def _pending_status_from_name_info(pending, chain_payload=None, chain_status=Non
         "transferHeight": transfer_height,
         "nameState": info.get('state'),
     }
+
+
+def _name_transfer_status(name):
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+    name_info, name_error = _fetch_hsd_name_info(name)
+    if name_error:
+        message, status = name_error[:2]
+        return {
+            "available": False,
+            "status": "unknown",
+            "message": message,
+            "statusCode": status,
+            "chainHeight": chain_height,
+        }
+
+    info = name_info.get('info') if isinstance(name_info, dict) else None
+    if not isinstance(info, dict):
+        return {
+            "available": False,
+            "status": "unknown",
+            "message": "Name state is not available from HSD yet.",
+            "chainHeight": chain_height,
+        }
+
+    owner = info.get('owner') if isinstance(info.get('owner'), dict) else {}
+    stats = info.get('stats') if isinstance(info.get('stats'), dict) else {}
+    transfer_height = info.get('transfer')
+    owner_hash = str(owner.get('hash') or '').lower() or None
+    owner_index = owner.get('index')
+
+    payload = {
+        "available": True,
+        "status": "finalized",
+        "message": "No active transfer lockup is visible for this name.",
+        "chainHeight": chain_height,
+        "transferHeight": transfer_height if isinstance(transfer_height, int) and transfer_height > 0 else None,
+        "unlockHeight": None,
+        "blocksUntilFinalize": None,
+        "ownerTxHash": owner_hash,
+        "ownerOutputIndex": owner_index if isinstance(owner_index, int) else None,
+        "nameState": info.get('state'),
+    }
+
+    if not isinstance(transfer_height, int) or transfer_height <= 0:
+        return payload
+
+    unlock_height = transfer_height + SHAKEDEX_TRANSFER_LOCKUP
+    blocks_until_finalize = stats.get('blocksUntilValidFinalize')
+    if not isinstance(blocks_until_finalize, int) and isinstance(chain_height, int):
+        blocks_until_finalize = max(unlock_height - chain_height, 0)
+
+    payload.update({
+        "status": "transfer-lockup",
+        "message": "Transfer detected; waiting for the 288-block Handshake transfer lockup.",
+        "unlockHeight": unlock_height,
+        "blocksUntilFinalize": blocks_until_finalize,
+    })
+
+    if isinstance(blocks_until_finalize, int) and blocks_until_finalize <= 0:
+        payload.update({
+            "status": "ready-to-finalize",
+            "message": "Transfer lockup is complete; the buyer can now finalize the transfer.",
+            "blocksUntilFinalize": 0,
+        })
+
+    return payload
 
 
 def _pending_listing_payload(pending, refresh=True):
@@ -772,15 +840,10 @@ def _merge_expiring_name_lists(limit, *name_lists):
 def _require_market_admin():
     token = current_app.config.get('MARKET_ADMIN_TOKEN')
     if not token:
-        return None
+        return jsonify({"error": "MARKET_ADMIN_TOKEN must be configured"}), 503
 
-    body = request.get_json(silent=True)
-    submitted = (
-        request.headers.get('X-Market-Admin-Token')
-        or request.args.get('adminToken')
-        or (body.get('adminToken') if isinstance(body, dict) else None)
-    )
-    if submitted != token:
+    submitted = request.headers.get('X-Market-Admin-Token')
+    if not submitted or not hmac.compare_digest(submitted, token):
         return jsonify({"error": "Admin token is required"}), 401
 
     return None
@@ -1279,19 +1342,12 @@ def auctions():
 @api_bp.route('/v2/sales', methods=['GET'])
 def sales():
     sale_statuses = ('sale-pending', 'sold', 'completed', 'archived')
-    historical_listings = (
+    listings = (
         Listing.query
         .filter(Listing.status.in_(sale_statuses))
         .order_by(Listing.created_at.desc())
         .all()
     )
-    listings = []
-    seen_names = set()
-    for listing in historical_listings:
-        if listing.name in seen_names:
-            continue
-        listings.append(listing)
-        seen_names.add(listing.name)
 
     return jsonify({
         "total": len(listings),
@@ -1534,6 +1590,11 @@ def refresh_listing_status(name):
 
     _, payload, status = _mark_listing_sold_if_spent(listing, sale_tx_hash or None)
     return jsonify(payload), status
+
+
+@api_bp.route('/v2/names/<name>/transfer-status', methods=['GET'])
+def name_transfer_status(name):
+    return jsonify(_name_transfer_status(name.lower().rstrip('/')))
 
 
 @api_bp.route('/v2/tx/<tx_hash>/status', methods=['GET'])
@@ -1868,22 +1929,43 @@ def upload_proof():
         os.remove(temp_path)
         return jsonify({"error": msg}), 400
     
-    # Pin to IPFS
+    listing_fields = fixed_price_listing_fields(proof_data)
+    if listing_fields['expires_at'] and listing_fields['expires_at'] < datetime.utcnow():
+        os.remove(temp_path)
+        return jsonify({"error": "This proof has already expired. Please create a fresh proof and upload it again."}), 400
+
+    existing_active = (
+        Listing.query
+        .filter_by(name=listing_fields['name'], status='active')
+        .order_by(Listing.created_at.desc())
+        .first()
+    )
+    replacement_listing = None
+    if existing_active and not existing_active.is_expired():
+        existing_proof = existing_active.proof_json or {}
+        same_listing_lock = (
+            existing_proof.get('lockingTxHash') == proof_data.get('lockingTxHash')
+            and existing_proof.get('lockingOutputIdx') == proof_data.get('lockingOutputIdx')
+            and existing_proof.get('publicKey') == proof_data.get('publicKey')
+        )
+        if not same_listing_lock:
+            os.remove(temp_path)
+            return jsonify({
+                "error": (
+                    f"An active listing for {listing_fields['name']} already exists. "
+                    "Cancel it or wait for it to expire before uploading a different listing proof."
+                )
+            }), 409
+        replacement_listing = existing_active
+
+    # Pin to IPFS after validation/replacement checks so rejected duplicates do not create pins.
     try:
         cid = pin_to_ipfs(temp_path)
     except Exception as e:
         os.remove(temp_path)
         return jsonify({"error": f"Failed to pin to IPFS: {str(e)}"}), 500
-        
-    os.remove(temp_path)
-    
-    listing_fields = fixed_price_listing_fields(proof_data)
-    if listing_fields['expires_at'] and listing_fields['expires_at'] < datetime.utcnow():
-        return jsonify({"error": "This proof has already expired. Please create a fresh proof and upload it again."}), 400
 
-    existing_active = Listing.query.filter_by(name=listing_fields['name'], status='active').first()
-    if existing_active and not existing_active.is_expired():
-        return jsonify({"error": f"An active listing for {listing_fields['name']} already exists"}), 409
+    os.remove(temp_path)
 
     listing = Listing(
         name=listing_fields['name'],
@@ -1897,6 +1979,8 @@ def upload_proof():
     )
     
     try:
+        if replacement_listing:
+            replacement_listing.status = 'archived'
         db.session.add(listing)
         pending = PendingListing.query.filter_by(name=listing.name).first()
         if pending:
@@ -1911,4 +1995,10 @@ def upload_proof():
         message=f"**{listing.name}** — {listing.price_hns} HNS\n[View]({request.host_url}listing/{listing.name})"
     )
     
-    return jsonify({"success": True, "name": listing.name, "cid": cid}), 201
+    return jsonify({
+        "success": True,
+        "name": listing.name,
+        "cid": cid,
+        "replaced": bool(replacement_listing),
+        "previousListingId": replacement_listing.id if replacement_listing else None,
+    }), 201

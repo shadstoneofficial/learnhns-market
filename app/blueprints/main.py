@@ -1,10 +1,12 @@
 import json
+import hmac
 from urllib.parse import quote
 
-from flask import Blueprint, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request, url_for
 from app.blueprints.api import get_hsd_status_payload
 from app.blueprints.api import _active_listings_unique_by_name
 from app.blueprints.api import _fetch_hsd_name_info
+from app.blueprints.api import _name_transfer_status
 from app.blueprints.api import _pending_listing_payload
 from app.models import Listing, PendingListing
 
@@ -32,19 +34,12 @@ def index():
 @main_bp.route('/sold')
 def sold():
     historical_statuses = ('sale-pending', 'sold', 'completed', 'archived', 'cancelled')
-    historical_listings = (
+    listings = (
         Listing.query
         .filter(Listing.status.in_(historical_statuses))
         .order_by(Listing.created_at.desc())
         .all()
     )
-    listings = []
-    seen_names = set()
-    for listing in historical_listings:
-        if listing.name in seen_names:
-            continue
-        listings.append(listing)
-        seen_names.add(listing.name)
     return render_template('sold.html', listings=listings)
 
 
@@ -77,7 +72,27 @@ def docs():
 
 @main_bp.route('/admin')
 def admin():
-    return render_template('admin.html')
+    admin_auth = _require_admin_page_auth()
+    if admin_auth:
+        return admin_auth
+
+    response = Response(render_template('admin.html'))
+    _mark_private_noindex(response)
+    return response
+
+
+@main_bp.route('/robots.txt')
+def robots_txt():
+    body = '\n'.join([
+        'User-agent: *',
+        'Disallow: /admin',
+        'Disallow: /api/v2/expiring-names/import',
+        'Disallow: /api/v2/expiring-names/refresh',
+        '',
+        'Sitemap: https://market.learnhns.com/sitemap.xml',
+        '',
+    ])
+    return Response(body, mimetype='text/plain')
 
 
 @main_bp.route('/status')
@@ -93,6 +108,28 @@ def status():
         status=status_data,
         progress_percent=progress_percent,
     )
+
+
+def _require_admin_page_auth():
+    token = current_app.config.get('MARKET_ADMIN_TOKEN')
+    if not token:
+        abort(404)
+
+    auth = request.authorization
+    submitted = auth.password if auth else None
+    if not submitted or not hmac.compare_digest(submitted, token):
+        response = Response('Admin authentication required.', 401)
+        response.headers['WWW-Authenticate'] = 'Basic realm="LearnHNS Market Admin"'
+        _mark_private_noindex(response)
+        return response
+
+    return None
+
+
+def _mark_private_noindex(response):
+    response.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive'
+    response.headers['Cache-Control'] = 'no-store, private'
+    return response
 
 @main_bp.route('/listing/<name>')
 def listing_detail(name):
@@ -145,10 +182,33 @@ def listing_detail(name):
         listing=listing,
         listing_display_status=listing_display_status,
         listing_expires_at=listing_expires_at,
+        sale_transfer_status=_name_transfer_status(normalized_name),
         bob_deep_link=bob_deep_link,
         listing_history=listing_history,
         hsd_readiness=_hsd_readiness(),
     )
+
+
+@main_bp.route('/listing/<name>/success')
+def listing_success(name):
+    normalized_name = name.lower().rstrip('/')
+    tx_hash = request.args.get('tx', '').strip()
+    listing = (
+        Listing.query
+        .filter_by(name=normalized_name)
+        .order_by(Listing.created_at.desc())
+        .first()
+    )
+
+    if not listing:
+        return redirect(url_for('main.listing_detail', name=normalized_name))
+
+    return render_template(
+        'purchase_success.html',
+        listing=listing,
+        tx_hash=tx_hash,
+    )
+
 
 @main_bp.route('/listing/<name>/proof.json')
 def listing_proof(name):
