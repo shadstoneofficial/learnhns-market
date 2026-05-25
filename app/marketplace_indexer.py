@@ -314,15 +314,22 @@ def progress_for(network='main'):
 
 def scan_market_blocks(start_height=None, end_height=None, lookback=720, network='main', max_blocks=720):
     chain_height = get_chain_height()
+    progress = progress_for(network)
     end = min(end_height or chain_height, chain_height)
-    start = start_height if start_height is not None else max(0, end - lookback)
+
+    if start_height is not None:
+        start = start_height
+    elif isinstance(progress.last_indexed_height, int) and progress.last_indexed_height < end:
+        start = progress.last_indexed_height + 1
+    else:
+        start = max(0, end - lookback)
+
     if end < start:
         return {'blocksProcessed': 0, 'eventsIndexed': 0, 'startHeight': start, 'endHeight': end}
     if end - start + 1 > max_blocks:
-        start = end - max_blocks + 1
+        end = start + max_blocks - 1
 
     names = observed_market_names()
-    progress = progress_for(network)
     now = datetime.utcnow()
     progress.status = 'running'
     progress.target_height = end

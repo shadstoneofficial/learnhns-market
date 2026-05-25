@@ -64,7 +64,7 @@
         <div>Price</div>
         <div>Status</div>
         <div>Date</div>
-        <div>Proof</div>
+        <div>Sale tx</div>
     </div>
     {% for listing in listings %}
     {% set history_date = listing.sold_at or listing.cancelled_at or listing.created_at %}
@@ -119,7 +119,7 @@
             {% endif %}
         </div>
         <div class="text-sm text-gray-500">
-            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 md:hidden">Proof</div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 md:hidden">Sale tx</div>
             {% if listing.sale_tx_hash %}
                 <a href="https://shakeshift.com/transaction/{{ listing.sale_tx_hash }}" class="font-mono text-indigo-700 break-all hover:underline" target="_blank" rel="noopener">{{ listing.sale_tx_hash }}</a>
             {% elif listing.status == 'sale-pending' %}

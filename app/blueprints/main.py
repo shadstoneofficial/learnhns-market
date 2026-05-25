@@ -10,6 +10,7 @@ from app.blueprints.api import _fetch_hsd_tx
 from app.blueprints.api import _fetch_hsd_name_info
 from app.blueprints.api import _name_transfer_status
 from app.blueprints.api import _pending_listing_payload
+from app.blueprints.api import _repair_sold_listing_sale_tx_hash
 from app.blueprints.api import _resolve_sale_pending_listing
 from app.blueprints.api import SHAKEDEX_TRANSFER_LOCKUP
 from app.marketplace_indexer import event_for_tx
@@ -47,6 +48,7 @@ def sold():
     )
     for listing in listings:
         _resolve_sale_pending_listing(listing)
+        _repair_sold_listing_sale_tx_hash(listing)
         listing.sale_transfer_status = _sale_transfer_status(listing)
     return render_template('sold.html', listings=listings)
 

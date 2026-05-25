@@ -555,6 +555,45 @@ def _tx_is_current_name_owner_transfer(name, tx_hash):
     return True, transfer_status
 
 
+def _candidate_listing_sale_tx_hashes(listing):
+    candidates = []
+    seen = set()
+
+    def add_candidate(value):
+        tx_hash, hash_error = _validate_hex_hash(value, 'txHash')
+        if hash_error or not tx_hash or tx_hash in seen:
+            return
+        seen.add(tx_hash)
+        candidates.append(tx_hash)
+
+    transfer_status = _name_transfer_status(listing.name)
+    if transfer_status.get('status') in {'transfer-lockup', 'ready-to-finalize'}:
+        add_candidate(transfer_status.get('ownerTxHash'))
+
+    try:
+        from app.marketplace_indexer import events_for_name
+
+        for event in events_for_name(listing.name):
+            if event.covenant_action == 'TRANSFER':
+                add_candidate(event.tx_hash)
+    except Exception as exc:
+        current_app.logger.warning(
+            "Could not read marketplace transfer events for %s: %s",
+            listing.name,
+            exc,
+        )
+
+    return candidates
+
+
+def _find_verified_listing_sale_tx_hash(listing):
+    for tx_hash in _candidate_listing_sale_tx_hashes(listing):
+        _tx, _payload, status = _verified_listing_spend(tx_hash, listing)
+        if status == 200:
+            return tx_hash
+    return None
+
+
 def _index_marketplace_sale_txs(listing):
     try:
         from app.marketplace_indexer import index_tx_hash
@@ -576,9 +615,7 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None, transfer_start_tx_ha
     if sale_tx_hash:
         tx, payload, status = _verified_listing_spend(sale_tx_hash, listing)
         verification_source = tx.get("source") if isinstance(tx, dict) else None
-        if status != 200 and _tx_is_finalized_name_owner(sale_tx_hash, listing):
-            verification_source = "name-owner"
-        elif status != 200:
+        if status != 200:
             return False, payload, status
 
         listing.status = 'sold'
@@ -609,6 +646,13 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None, transfer_start_tx_ha
 
         listing.status = 'sale-pending'
         db.session.commit()
+        verified_sale_tx_hash = _find_verified_listing_sale_tx_hash(listing)
+        if verified_sale_tx_hash:
+            return _mark_listing_sold_if_spent(
+                listing,
+                verified_sale_tx_hash,
+                verified_sale_tx_hash,
+            )
         return False, {
             "sold": False,
             "status": listing.status,
@@ -626,6 +670,15 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None, transfer_start_tx_ha
 
 def _resolve_sale_pending_listing(listing):
     if not listing or listing.status != 'sale-pending' or listing.sale_tx_hash:
+        return listing
+
+    verified_sale_tx_hash = _find_verified_listing_sale_tx_hash(listing)
+    if verified_sale_tx_hash:
+        _mark_listing_sold_if_spent(
+            listing,
+            verified_sale_tx_hash,
+            verified_sale_tx_hash,
+        )
         return listing
 
     transfer_status = _name_transfer_status(listing.name)
@@ -646,15 +699,39 @@ def _resolve_sale_pending_listing(listing):
     if existing_sale:
         return listing
 
-    _, payload, status = _mark_listing_sold_if_spent(listing, owner_tx_hash)
-    if status != 200:
-        current_app.logger.info(
-            "Could not resolve sale-pending listing %s from owner tx %s: %s",
-            listing.name,
-            owner_tx_hash,
-            payload,
-        )
+    current_app.logger.info(
+        "Sale-pending listing %s has finalized owner tx %s but no verified Shakedex sale tx.",
+        listing.name,
+        owner_tx_hash,
+    )
 
+    return listing
+
+
+def _repair_sold_listing_sale_tx_hash(listing):
+    if (
+        not listing
+        or listing.status not in {'sold', 'completed'}
+        or not listing.sale_tx_hash
+    ):
+        return listing
+
+    _tx, _payload, status = _verified_listing_spend(listing.sale_tx_hash, listing)
+    if status == 200:
+        return listing
+
+    verified_sale_tx_hash = _find_verified_listing_sale_tx_hash(listing)
+    if not verified_sale_tx_hash or verified_sale_tx_hash == listing.sale_tx_hash:
+        return listing
+
+    listing.sale_tx_hash = verified_sale_tx_hash
+    listing.transfer_start_tx_hash = verified_sale_tx_hash
+    if isinstance(listing.proof_json, dict):
+        proof_json = dict(listing.proof_json)
+        proof_json["transferStartTxHash"] = verified_sale_tx_hash
+        listing.proof_json = proof_json
+    db.session.commit()
+    _index_marketplace_sale_txs(listing)
     return listing
 
 
@@ -1487,6 +1564,7 @@ def sales():
     )
     for listing in listings:
         _resolve_sale_pending_listing(listing)
+        _repair_sold_listing_sale_tx_hash(listing)
 
     return jsonify({
         "total": len(listings),
