@@ -440,8 +440,22 @@ def _refreshable_listing_for_spend(name, tx_hash):
 
 
 def _listing_coin_ref(listing):
-    proof = listing.proof_json
-    return proof["lockingTxHash"], proof["lockingOutputIdx"]
+    proof = listing.proof_json if isinstance(listing.proof_json, dict) else {}
+    tx_hash = proof.get("lockingTxHash")
+    output_index = proof.get("lockingOutputIdx")
+    if not tx_hash or output_index is None:
+        return None, None
+
+    try:
+        output_index = int(output_index)
+    except (TypeError, ValueError):
+        return None, None
+
+    tx_hash = str(tx_hash).strip().lower()
+    if len(tx_hash) != 64 or any(c not in '0123456789abcdef' for c in tx_hash):
+        return None, None
+
+    return tx_hash, output_index
 
 
 def _listing_lock_coin_is_spent(listing):
@@ -449,6 +463,9 @@ def _listing_lock_coin_is_spent(listing):
         return False
 
     tx_hash, output_index = _listing_coin_ref(listing)
+    if not tx_hash:
+        return False
+
     _, error = _fetch_hsd_coin(tx_hash, output_index)
     if not error:
         return False
@@ -475,6 +492,9 @@ def _listing_lock_coin_is_spent(listing):
 
 def _tx_spends_listing_coin(tx, listing):
     tx_hash, output_index = _listing_coin_ref(listing)
+    if not tx_hash:
+        return False
+
     inputs = tx.get('inputs', []) if isinstance(tx, dict) else []
 
     for tx_input in inputs:
@@ -505,6 +525,13 @@ def _validate_hex_hash(value, field):
 
 
 def _verified_listing_spend(tx_hash, listing):
+    lock_tx_hash, _lock_output_index = _listing_coin_ref(listing)
+    if not lock_tx_hash:
+        return None, {
+            "error": "Listing does not have a Shakedex locking coin reference",
+            "url": f"/listing/{listing.name}",
+        }, 400
+
     tx, error = _fetch_hsd_tx(tx_hash)
     if error:
         message, status = error[:2]
@@ -556,6 +583,10 @@ def _tx_is_current_name_owner_transfer(name, tx_hash):
 
 
 def _candidate_listing_sale_tx_hashes(listing):
+    tx_hash, _output_index = _listing_coin_ref(listing)
+    if not tx_hash:
+        return []
+
     candidates = []
     seen = set()
 
@@ -611,6 +642,11 @@ def _index_marketplace_sale_txs(listing):
 
 def _mark_listing_sold_if_spent(listing, sale_tx_hash=None, transfer_start_tx_hash=None):
     tx_hash, output_index = _listing_coin_ref(listing)
+    if not tx_hash:
+        return False, {
+            "error": "Listing does not have a Shakedex locking coin reference",
+            "url": f"/listing/{listing.name}",
+        }, 400
 
     if sale_tx_hash:
         tx, payload, status = _verified_listing_spend(sale_tx_hash, listing)
