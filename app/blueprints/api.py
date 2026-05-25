@@ -735,6 +735,27 @@ def _resolve_sale_pending_listing(listing):
     if existing_sale:
         return listing
 
+    lock_tx_hash, lock_output_index = _listing_coin_ref(listing)
+    owner_output_index = transfer_status.get('ownerOutputIndex')
+    try:
+        owner_output_index = int(owner_output_index)
+    except (TypeError, ValueError):
+        owner_output_index = None
+
+    if lock_tx_hash == owner_tx_hash and owner_output_index == lock_output_index:
+        _coin, coin_error = _fetch_hsd_coin(lock_tx_hash, lock_output_index)
+        if coin_error and coin_error[1] == 404:
+            listing.status = 'sold'
+            listing.sold_at = datetime.utcnow()
+            db.session.commit()
+            current_app.logger.info(
+                "Marked sale-pending listing %s sold without sale tx hash: lock coin %s/%s is spent and name owner is finalized.",
+                listing.name,
+                lock_tx_hash,
+                lock_output_index,
+            )
+            return listing
+
     current_app.logger.info(
         "Sale-pending listing %s has finalized owner tx %s but no verified Shakedex sale tx.",
         listing.name,

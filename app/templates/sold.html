@@ -124,6 +124,8 @@
                 <a href="https://shakeshift.com/transaction/{{ listing.sale_tx_hash }}" class="font-mono text-indigo-700 break-all hover:underline" target="_blank" rel="noopener">{{ listing.sale_tx_hash }}</a>
             {% elif listing.status == 'sale-pending' %}
                 Awaiting sale tx verification
+            {% elif listing.status in ['sold', 'completed'] %}
+                Sale tx not recorded
             {% else %}
                 -
             {% endif %}
