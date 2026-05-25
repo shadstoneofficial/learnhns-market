@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
+import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app import create_app
 from app.marketplace_indexer import index_listing_hashes, scan_market_blocks
