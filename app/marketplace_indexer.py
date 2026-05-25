@@ -135,6 +135,69 @@ def output_index(output, fallback):
     return fallback
 
 
+def tx_inputs(tx):
+    if not isinstance(tx, dict):
+        return []
+    inputs = tx.get('inputs')
+    if isinstance(inputs, list):
+        return inputs
+    return []
+
+
+def input_prevout(tx_input):
+    if not isinstance(tx_input, dict):
+        return None, None
+    prevout = tx_input.get('prevout')
+    if not isinstance(prevout, dict):
+        return None, None
+    prev_hash = prevout.get('hash')
+    try:
+        prev_index = int(prevout.get('index'))
+    except (TypeError, ValueError):
+        return None, None
+    if not isinstance(prev_hash, str) or len(prev_hash) != 64:
+        return None, None
+    return prev_hash.lower(), prev_index
+
+
+def listing_coin_ref(listing):
+    proof = listing.proof_json or {}
+    tx_hash_value = proof.get('lockingTxHash')
+    output_index_value = proof.get('lockingOutputIdx')
+    try:
+        output_index_value = int(output_index_value)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(tx_hash_value, str) or len(tx_hash_value) != 64:
+        return None
+    return tx_hash_value.lower(), output_index_value
+
+
+def spendable_listing_refs():
+    refs = {}
+    listings = Listing.query.filter(Listing.status.in_(('active', 'sale-pending'))).all()
+    for listing in listings:
+        ref = listing_coin_ref(listing)
+        if ref:
+            refs.setdefault(ref, []).append(listing)
+    return refs
+
+
+def mark_listing_sold_from_block_tx(listing, tx_hash_value, event_time=None):
+    if listing.status in {'sold', 'completed'}:
+        return False
+
+    listing.status = 'sold'
+    listing.sold_at = event_time or datetime.utcnow()
+    listing.sale_tx_hash = tx_hash_value
+    listing.transfer_start_tx_hash = tx_hash_value
+    if isinstance(listing.proof_json, dict):
+        proof_json = dict(listing.proof_json)
+        proof_json['transferStartTxHash'] = tx_hash_value
+        listing.proof_json = proof_json
+    return True
+
+
 def record_event(name, action, tx_hash_value, output_idx, block_height=None, block_hash=None, event_time=None, source='hsd-block', raw=None, network='main'):
     name = normalize_name(name)
     if not name or action not in MARKETPLACE_COVENANT_ACTIONS or not tx_hash_value:
@@ -167,7 +230,7 @@ def record_event(name, action, tx_hash_value, output_idx, block_height=None, blo
     return event, created
 
 
-def index_tx(tx, block=None, source='hsd-tx', observed_names=None, network='main'):
+def index_tx(tx, block=None, source='hsd-tx', observed_names=None, network='main', listing_refs=None):
     tx_hash_value = tx_hash(tx)
     if not tx_hash_value:
         return 0
@@ -181,6 +244,15 @@ def index_tx(tx, block=None, source='hsd-tx', observed_names=None, network='main
     event_time = block_time(block, tx)
 
     created_count = 0
+    listing_refs = listing_refs if listing_refs is not None else spendable_listing_refs()
+    if listing_refs:
+        for tx_input in tx_inputs(tx):
+            ref = input_prevout(tx_input)
+            if ref in listing_refs:
+                for listing in listing_refs[ref]:
+                    if mark_listing_sold_from_block_tx(listing, tx_hash_value, event_time):
+                        created_count += 1
+
     for fallback_index, output in enumerate(tx_outputs(tx)):
         covenant = output_covenant(output)
         action = covenant_action(covenant)
@@ -346,9 +418,17 @@ def scan_market_blocks(start_height=None, end_height=None, lookback=720, network
             if isinstance(block, dict):
                 block.setdefault('height', height)
                 block.setdefault('hash', block_hash_value)
+            listing_refs = spendable_listing_refs()
             for entry in block_txs(block):
                 tx = fetch_tx_if_needed(entry)
-                events_indexed += index_tx(tx, block=block, source='hsd-block', observed_names=names, network=network)
+                events_indexed += index_tx(
+                    tx,
+                    block=block,
+                    source='hsd-block',
+                    observed_names=names,
+                    network=network,
+                    listing_refs=listing_refs,
+                )
             progress.last_indexed_height = height
             blocks_processed += 1
             if blocks_processed % 25 == 0:
