@@ -10,7 +10,6 @@ from app.blueprints.api import _fetch_hsd_tx
 from app.blueprints.api import _fetch_hsd_name_info
 from app.blueprints.api import _name_transfer_status
 from app.blueprints.api import _pending_listing_payload
-from app.blueprints.api import _repair_sold_listing_sale_tx_hash
 from app.blueprints.api import _resolve_sale_pending_listing
 from app.blueprints.api import SHAKEDEX_TRANSFER_LOCKUP
 from app.marketplace_indexer import event_for_tx
@@ -46,10 +45,15 @@ def sold():
         .order_by(Listing.created_at.desc())
         .all()
     )
+    chain_height = _current_chain_height()
     for listing in listings:
-        _resolve_sale_pending_listing(listing)
-        _repair_sold_listing_sale_tx_hash(listing)
-        listing.sale_transfer_status = _sale_transfer_status(listing)
+        if listing.status == 'sale-pending':
+            _resolve_sale_pending_listing(listing)
+        listing.sale_transfer_status = _sale_transfer_status(
+            listing,
+            chain_height=chain_height,
+            allow_network=False,
+        )
     return render_template('sold.html', listings=listings)
 
 
@@ -364,7 +368,13 @@ If the transfer-start transaction is not recorded, the site should say that plai
 """
 
 
-def _sale_transfer_status(listing):
+def _current_chain_height():
+    chain_payload, chain_status = get_hsd_status_payload()
+    chain_height = chain_payload.get('height') if chain_status == 200 else None
+    return chain_height if isinstance(chain_height, int) else None
+
+
+def _sale_transfer_status(listing, chain_height=None, allow_network=True):
     if listing.status not in {'sold', 'completed'}:
         return None
 
@@ -379,6 +389,8 @@ def _sale_transfer_status(listing):
         transfer_start_tx_hash,
         finalize_tx_hash=(listing.sale_tx_hash or '').lower(),
         name=listing.name,
+        chain_height=chain_height,
+        allow_network=allow_network,
     )
     if tx_status:
         return tx_status
@@ -389,7 +401,13 @@ def _sale_transfer_status(listing):
     }
 
 
-def _sale_tx_transfer_status(transfer_start_tx_hash, finalize_tx_hash=None, name=None):
+def _sale_tx_transfer_status(
+    transfer_start_tx_hash,
+    finalize_tx_hash=None,
+    name=None,
+    chain_height=None,
+    allow_network=True,
+):
     transfer_event = event_for_tx(transfer_start_tx_hash, name=name, action='TRANSFER')
     if transfer_event and isinstance(transfer_event.block_height, int):
         return _sale_transfer_status_from_height(
@@ -397,7 +415,15 @@ def _sale_tx_transfer_status(transfer_start_tx_hash, finalize_tx_hash=None, name
             transfer_start_tx_hash,
             finalize_tx_hash=finalize_tx_hash,
             name=name,
+            chain_height=chain_height,
+            allow_network=allow_network,
         )
+
+    if not allow_network:
+        return {
+            "label": "Transfer start tx not indexed",
+            "tone": "pending",
+        }
 
     tx, tx_error = _fetch_hsd_tx(transfer_start_tx_hash)
     if tx_error:
@@ -417,10 +443,19 @@ def _sale_tx_transfer_status(transfer_start_tx_hash, finalize_tx_hash=None, name
         transfer_start_tx_hash,
         finalize_tx_hash=finalize_tx_hash,
         name=name,
+        chain_height=chain_height,
+        allow_network=allow_network,
     )
 
 
-def _sale_transfer_status_from_height(tx_height, transfer_start_tx_hash, finalize_tx_hash=None, name=None):
+def _sale_transfer_status_from_height(
+    tx_height,
+    transfer_start_tx_hash,
+    finalize_tx_hash=None,
+    name=None,
+    chain_height=None,
+    allow_network=True,
+):
     if (
         finalize_tx_hash
         and finalize_tx_hash != transfer_start_tx_hash
@@ -429,6 +464,7 @@ def _sale_transfer_status_from_height(tx_height, transfer_start_tx_hash, finaliz
             name,
             'FINALIZE',
             min_height=tx_height + SHAKEDEX_TRANSFER_LOCKUP,
+            allow_network=allow_network,
         )
     ):
         return {
@@ -436,8 +472,8 @@ def _sale_transfer_status_from_height(tx_height, transfer_start_tx_hash, finaliz
             "tone": "complete",
         }
 
-    chain_payload, chain_status = get_hsd_status_payload()
-    chain_height = chain_payload.get('height') if chain_status == 200 else None
+    if not isinstance(chain_height, int):
+        chain_height = _current_chain_height() if allow_network else None
     if not isinstance(chain_height, int):
         return {
             "label": "Checking buyer finalize status",
@@ -458,7 +494,7 @@ def _sale_transfer_status_from_height(tx_height, transfer_start_tx_hash, finaliz
     }
 
 
-def _tx_has_name_covenant(tx_hash, name, covenant_action, min_height=None):
+def _tx_has_name_covenant(tx_hash, name, covenant_action, min_height=None, allow_network=True):
     if not tx_hash or not name:
         return False
 
@@ -469,6 +505,9 @@ def _tx_has_name_covenant(tx_hash, name, covenant_action, min_height=None):
             and indexed_event.block_height >= min_height
         ):
             return True
+        return False
+
+    if not allow_network:
         return False
 
     tx, tx_error = _fetch_hsd_tx(tx_hash)
