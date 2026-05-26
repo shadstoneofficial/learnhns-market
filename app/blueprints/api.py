@@ -477,6 +477,30 @@ def _listing_coin_ref(listing):
     return tx_hash, output_index
 
 
+def _listing_lock_is_current_owner(listing, transfer_status=None):
+    lock_tx_hash, lock_output_index = _listing_coin_ref(listing)
+    if not lock_tx_hash:
+        return False
+
+    transfer_status = transfer_status or _name_transfer_status(listing.name)
+    if transfer_status.get('status') != 'finalized':
+        return False
+
+    owner_tx_hash, hash_error = _validate_hex_hash(
+        transfer_status.get('ownerTxHash'),
+        'ownerTxHash',
+    )
+    if hash_error or owner_tx_hash != lock_tx_hash:
+        return False
+
+    try:
+        owner_output_index = int(transfer_status.get('ownerOutputIndex'))
+    except (TypeError, ValueError):
+        return False
+
+    return owner_output_index == lock_output_index
+
+
 def _listing_lock_coin_is_spent(listing):
     if not listing or listing.status != 'active':
         return False
@@ -484,6 +508,18 @@ def _listing_lock_coin_is_spent(listing):
     tx_hash, output_index = _listing_coin_ref(listing)
     if not tx_hash:
         return False
+
+    transfer_status = _name_transfer_status(listing.name)
+    if _listing_lock_is_current_owner(listing, transfer_status=transfer_status):
+        return False
+    if transfer_status.get('status') in {'transfer-lockup', 'ready-to-finalize'}:
+        listing.status = 'sale-pending'
+        db.session.commit()
+        current_app.logger.info(
+            "Marked Shakedex listing %s sale-pending because an active transfer was detected.",
+            listing.name,
+        )
+        return True
 
     _, error = _fetch_hsd_coin(tx_hash, output_index)
     if not error:
@@ -727,6 +763,19 @@ def _resolve_sale_pending_listing(listing):
     if not listing or listing.status != 'sale-pending' or listing.sale_tx_hash:
         return listing
 
+    transfer_status = _name_transfer_status(listing.name)
+    if _listing_lock_is_current_owner(listing, transfer_status=transfer_status):
+        listing.status = 'active'
+        listing.sold_at = None
+        listing.sale_tx_hash = None
+        listing.transfer_start_tx_hash = None
+        db.session.commit()
+        current_app.logger.info(
+            "Restored listing %s to active: name owner is still the Shakedex lock output.",
+            listing.name,
+        )
+        return listing
+
     verified_sale_tx_hash = _find_verified_listing_sale_tx_hash(listing)
     if verified_sale_tx_hash:
         _mark_listing_sold_if_spent(
@@ -736,7 +785,6 @@ def _resolve_sale_pending_listing(listing):
         )
         return listing
 
-    transfer_status = _name_transfer_status(listing.name)
     if transfer_status.get('status') != 'finalized':
         return listing
 
@@ -753,27 +801,6 @@ def _resolve_sale_pending_listing(listing):
     ).first()
     if existing_sale:
         return listing
-
-    lock_tx_hash, lock_output_index = _listing_coin_ref(listing)
-    owner_output_index = transfer_status.get('ownerOutputIndex')
-    try:
-        owner_output_index = int(owner_output_index)
-    except (TypeError, ValueError):
-        owner_output_index = None
-
-    if lock_tx_hash == owner_tx_hash and owner_output_index == lock_output_index:
-        _coin, coin_error = _fetch_hsd_coin(lock_tx_hash, lock_output_index)
-        if coin_error and coin_error[1] == 404:
-            listing.status = 'sold'
-            listing.sold_at = datetime.utcnow()
-            db.session.commit()
-            current_app.logger.info(
-                "Marked sale-pending listing %s sold without sale tx hash: lock coin %s/%s is spent and name owner is finalized.",
-                listing.name,
-                lock_tx_hash,
-                lock_output_index,
-            )
-            return listing
 
     current_app.logger.info(
         "Sale-pending listing %s has finalized owner tx %s but no verified Shakedex sale tx.",
