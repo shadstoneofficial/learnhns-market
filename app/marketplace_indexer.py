@@ -175,8 +175,14 @@ def listing_coin_ref(listing):
 
 def spendable_listing_refs():
     refs = {}
-    listings = Listing.query.filter(Listing.status.in_(('active', 'sale-pending'))).all()
+    listings = (
+        Listing.query
+        .filter(Listing.status.in_(('active', 'sale-pending', 'sold', 'completed')))
+        .all()
+    )
     for listing in listings:
+        if listing.status in {'sold', 'completed'} and listing.sale_tx_hash and listing.transfer_start_tx_hash:
+            continue
         ref = listing_coin_ref(listing)
         if ref:
             refs.setdefault(ref, []).append(listing)
@@ -184,16 +190,16 @@ def spendable_listing_refs():
 
 
 def mark_listing_sold_from_block_tx(listing, tx_hash_value, event_time=None):
-    if listing.status in {'sold', 'completed'}:
+    if listing.status in {'sold', 'completed'} and listing.sale_tx_hash and listing.transfer_start_tx_hash:
         return False
 
     listing.status = 'sold'
-    listing.sold_at = event_time or datetime.utcnow()
-    listing.sale_tx_hash = tx_hash_value
-    listing.transfer_start_tx_hash = tx_hash_value
+    listing.sold_at = listing.sold_at or event_time or datetime.utcnow()
+    listing.sale_tx_hash = listing.sale_tx_hash or tx_hash_value
+    listing.transfer_start_tx_hash = listing.transfer_start_tx_hash or tx_hash_value
     if isinstance(listing.proof_json, dict):
         proof_json = dict(listing.proof_json)
-        proof_json['transferStartTxHash'] = tx_hash_value
+        proof_json['transferStartTxHash'] = listing.transfer_start_tx_hash
         listing.proof_json = proof_json
     return True
 

@@ -788,13 +788,13 @@ def _repair_sold_listing_sale_tx_hash(listing):
     if (
         not listing
         or listing.status not in {'sold', 'completed'}
-        or not listing.sale_tx_hash
     ):
         return listing
 
-    _tx, _payload, status = _verified_listing_spend(listing.sale_tx_hash, listing)
-    if status == 200:
-        return listing
+    if listing.sale_tx_hash:
+        _tx, _payload, status = _verified_listing_spend(listing.sale_tx_hash, listing)
+        if status == 200:
+            return listing
 
     verified_sale_tx_hash = _find_verified_listing_sale_tx_hash(listing)
     if not verified_sale_tx_hash or verified_sale_tx_hash == listing.sale_tx_hash:
