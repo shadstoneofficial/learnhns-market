@@ -1,4 +1,6 @@
 import json
+from datetime import datetime, timedelta
+from decimal import Decimal
 from urllib.parse import quote
 from xml.sax.saxutils import escape
 
@@ -14,6 +16,7 @@ from app.blueprints.api import _resolve_sale_pending_listing
 from app.blueprints.api import SHAKEDEX_TRANSFER_LOCKUP
 from app.marketplace_indexer import event_for_tx
 from app.models import Listing, PendingListing
+from app.watchers import top_watched_names, total_watcher_count, watched_name_count, watcher_count_for_name, watcher_counts_for_names
 
 main_bp = Blueprint('main', __name__)
 
@@ -29,10 +32,14 @@ def index():
         and not pending.is_expired()
         and pending.name not in active_names
     ]
+    watcher_counts = watcher_counts_for_names(
+        [listing.name for listing in listings] + [pending.name for pending in pending_listings]
+    )
     return render_template(
         'index.html',
         listings=listings,
         pending_listings=[_pending_listing_payload(pending) for pending in pending_listings],
+        watcher_counts=watcher_counts,
         hsd_readiness=_hsd_readiness(),
     )
 
@@ -75,6 +82,26 @@ def pending():
     )
 
 
+@main_bp.route('/stats')
+def stats():
+    listings = _active_listings_unique_by_name()
+    active_names = {listing.name for listing in listings}
+    pending_listings = [
+        pending for pending in PendingListing.query.order_by(PendingListing.created_at.desc()).all()
+        if pending.status not in {'active', 'cancelled', 'expired', 'failed'}
+        and not pending.is_expired()
+        and pending.name not in active_names
+    ]
+    sold_listings = (
+        Listing.query
+        .filter(Listing.status.in_(('sold', 'completed')))
+        .order_by(Listing.sold_at.desc(), Listing.created_at.desc())
+        .all()
+    )
+    stats_payload = _market_stats_payload(listings, pending_listings, sold_listings)
+    return render_template('stats.html', stats=stats_payload)
+
+
 @main_bp.route('/upload')
 def upload():
     return render_template('upload.html')
@@ -115,6 +142,7 @@ def sitemap_xml():
         (url_for('main.index'), 'daily', '1.0'),
         (url_for('main.sold'), 'hourly', '0.8'),
         (url_for('main.pending'), 'hourly', '0.8'),
+        (url_for('main.stats'), 'hourly', '0.8'),
         (url_for('main.docs'), 'monthly', '0.5'),
         (url_for('main.status'), 'daily', '0.4'),
         (url_for('main.llms_txt'), 'weekly', '0.4'),
@@ -192,6 +220,7 @@ def listing_detail(name):
                 'pending.html',
                 pending=_pending_listing_payload(pending),
                 listing_history=listing_history,
+                watcher_count=watcher_count_for_name(normalized_name),
                 hsd_readiness=_hsd_readiness(),
             )
 
@@ -206,6 +235,7 @@ def listing_detail(name):
                 'name_profile.html',
                 profile=_name_profile_payload(normalized_name),
                 listing_history=listing_history,
+                watcher_count=watcher_count_for_name(normalized_name),
             )
 
     listing_is_expired = listing.is_expired()
@@ -228,6 +258,7 @@ def listing_detail(name):
         sale_transfer_status=_name_transfer_status(normalized_name),
         bob_deep_link=bob_deep_link,
         listing_history=listing_history,
+        watcher_count=watcher_count_for_name(normalized_name),
         hsd_readiness=_hsd_readiness(),
     )
 
@@ -278,6 +309,107 @@ def _listing_history(name):
         .order_by(Listing.created_at.desc())
         .all()
     )
+
+
+def _market_stats_payload(active_listings, pending_listings, sold_listings):
+    now = datetime.utcnow()
+    cutoff_30d = now - timedelta(days=30)
+    sales_30d = [
+        listing for listing in sold_listings
+        if _sale_date(listing) and _sale_date(listing) >= cutoff_30d
+    ]
+    active_inventory_value = sum((listing.price_hns for listing in active_listings), Decimal('0'))
+    all_time_volume = sum((listing.price_hns for listing in sold_listings), Decimal('0'))
+    volume_30d = sum((listing.price_hns for listing in sales_30d), Decimal('0'))
+    monthly_volume = _monthly_sales_volume(sold_listings)
+    most_watched = _most_watched_payload(active_listings, pending_listings)
+
+    return {
+        'activeListingCount': len(active_listings),
+        'pendingListingCount': len(pending_listings),
+        'activeInventoryValue': active_inventory_value,
+        'completedSaleCount': len(sold_listings),
+        'allTimeVolume': all_time_volume,
+        'volume30d': volume_30d,
+        'totalWatcherCount': total_watcher_count(),
+        'watchedNameCount': watched_name_count(),
+        'topSalesAllTime': _top_sales_payload(sold_listings, limit=10),
+        'topSales30d': _top_sales_payload(sales_30d, limit=10),
+        'mostWatched': most_watched,
+        'monthlyVolume': monthly_volume,
+    }
+
+
+def _sale_date(listing):
+    return listing.sold_at or listing.created_at
+
+
+def _top_sales_payload(listings, limit=10):
+    sorted_sales = sorted(
+        listings,
+        key=lambda listing: (listing.price_hns or Decimal('0'), _sale_date(listing) or datetime.min),
+        reverse=True,
+    )
+    return [
+        {
+            'name': listing.name,
+            'priceHns': listing.price_hns,
+            'soldAt': _sale_date(listing),
+            'status': listing.status,
+            'url': url_for('main.listing_detail', name=listing.name),
+        }
+        for listing in sorted_sales[:limit]
+    ]
+
+
+def _monthly_sales_volume(listings):
+    buckets = {}
+    for listing in listings:
+        sale_date = _sale_date(listing)
+        if not sale_date:
+            continue
+        key = sale_date.strftime('%Y-%m')
+        bucket = buckets.setdefault(key, {'month': key, 'saleCount': 0, 'volumeHns': Decimal('0')})
+        bucket['saleCount'] += 1
+        bucket['volumeHns'] += listing.price_hns or Decimal('0')
+
+    return [
+        buckets[key]
+        for key in sorted(buckets.keys(), reverse=True)[:12]
+    ]
+
+
+def _most_watched_payload(active_listings, pending_listings):
+    active_by_name = {listing.name: listing for listing in active_listings}
+    pending_by_name = {pending.name: pending for pending in pending_listings}
+    watched = top_watched_names(limit=10)
+    rows = []
+    for row in watched:
+        name = row['name']
+        active = active_by_name.get(name)
+        pending = pending_by_name.get(name)
+        latest = None
+        if not active and not pending:
+            latest = (
+                Listing.query
+                .filter_by(name=name)
+                .order_by(Listing.created_at.desc())
+                .first()
+            )
+        status = 'active' if active else 'pending' if pending else latest.status if latest else 'profile'
+        price = active.price_hns if active else None
+        if pending and pending.expected_price:
+            price = Decimal(pending.expected_price) / Decimal('1000000')
+        if latest and price is None:
+            price = latest.price_hns
+        rows.append({
+            'name': name,
+            'watcherCount': row['watcherCount'],
+            'status': status,
+            'priceHns': price,
+            'url': url_for('main.listing_detail', name=name),
+        })
+    return rows
 
 
 def _has_admin_page_access():

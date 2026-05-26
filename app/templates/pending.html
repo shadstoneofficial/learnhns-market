@@ -54,11 +54,13 @@
     </div>
 
     <div class="mt-8 rounded-md border border-indigo-100 bg-indigo-50 p-4 text-indigo-950">
-        <p class="font-semibold">Want to know when this becomes buyable?</p>
+        <p class="font-semibold">
+            {% if watcher_count == 1 %}1 person is watching this pending name.{% elif watcher_count > 1 %}{{ watcher_count }} people are watching this pending name.{% else %}Want to know when this becomes buyable?{% endif %}
+        </p>
         <p class="mt-1 text-sm text-indigo-900">Watch this listing with a GFAVIP account and keep it in your saved watchlist while the Shakedex lockup finishes.</p>
         <div class="mt-4">
             {% if current_account %}
-                <button type="button" data-watch-name="{{ pending.name }}" class="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Watch listing</button>
+                <button type="button" data-watch-name="{{ pending.name }}" class="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">{% if watcher_count > 0 %}Join {{ watcher_count }} watcher{% if watcher_count != 1 %}s{% endif %}{% else %}Watch listing{% endif %}</button>
                 <span id="watch-message" class="ml-3 text-sm font-medium"></span>
             {% else %}
                 <a href="{{ url_for('account.login_page', next=request.path) }}" class="inline-block rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Login to watch</a>

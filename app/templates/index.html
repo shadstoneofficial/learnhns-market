@@ -48,6 +48,7 @@
             <span class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Sort</span>
             <select id="market-sort" class="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="newest">Newest</option>
+                <option value="watchers-desc">Most watched</option>
                 <option value="price-asc">Price low to high</option>
                 <option value="price-desc">Price high to low</option>
                 <option value="length-asc">Shortest name</option>
@@ -103,6 +104,7 @@
          data-punycode="{{ 'true' if listing.name.startswith('xn--') else 'false' }}"
          data-price="{{ listing.price_hns }}"
          data-length="{{ listing.name|length }}"
+         data-watchers="{{ watcher_counts.get(listing.name, 0) }}"
          data-created="{{ listing.created_at.isoformat() if listing.created_at else '' }}"
          role="link"
          tabindex="0">
@@ -119,6 +121,10 @@
         </div>
         <div data-card-details>
         <p class="text-gray-700 mb-2 font-semibold">{{ "{:,.2f}".format(listing.price_hns) }} HNS</p>
+        <p class="mb-2 text-sm font-semibold text-gray-500">
+            {% set watcher_count = watcher_counts.get(listing.name, 0) %}
+            {% if watcher_count == 1 %}1 watching{% elif watcher_count > 1 %}{{ watcher_count }} watching{% else %}Be the first watcher{% endif %}
+        </p>
         {% set expires_at = listing.effective_expires_at() %}
         {% if expires_at %}
             <p class="text-sm text-gray-500 mb-4">Buyable until {{ expires_at.strftime('%Y-%m-%d %H:%M UTC') }}</p>
@@ -154,6 +160,7 @@
          data-punycode="{{ 'true' if pending.name.startswith('xn--') else 'false' }}"
          data-price="{{ pending.expectedPrice / 1000000 if pending.expectedPrice else '' }}"
          data-length="{{ pending.name|length }}"
+         data-watchers="{{ watcher_counts.get(pending.name, 0) }}"
          data-created="{{ pending.createdAt or '' }}"
          role="link"
          tabindex="0">
@@ -174,6 +181,10 @@
         {% else %}
             <p class="text-gray-700 mb-2 font-semibold">Price coming soon</p>
         {% endif %}
+        <p class="mb-2 text-sm font-semibold text-gray-500">
+            {% set watcher_count = watcher_counts.get(pending.name, 0) %}
+            {% if watcher_count == 1 %}1 watching{% elif watcher_count > 1 %}{{ watcher_count }} watching{% else %}Be the first watcher{% endif %}
+        </p>
         <p class="text-sm text-gray-500 mb-4">
             {{ pending.pendingReason or 'Waiting for Shakedex proof upload.' }}
             {% if pending.blocksUntilFinalize %}
@@ -238,9 +249,12 @@
     const bPrice = numberFrom(b.dataset.price, Number.POSITIVE_INFINITY);
     const aLength = numberFrom(a.dataset.length);
     const bLength = numberFrom(b.dataset.length);
+    const aWatchers = numberFrom(a.dataset.watchers);
+    const bWatchers = numberFrom(b.dataset.watchers);
     const aCreated = a.dataset.created || '';
     const bCreated = b.dataset.created || '';
 
+    if (sort === 'watchers-desc') return bWatchers - aWatchers || bCreated.localeCompare(aCreated) || aName.localeCompare(bName);
     if (sort === 'price-asc') return aPrice - bPrice || aName.localeCompare(bName);
     if (sort === 'price-desc') return bPrice - aPrice || aName.localeCompare(bName);
     if (sort === 'length-asc') return aLength - bLength || aName.localeCompare(bName);

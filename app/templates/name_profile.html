@@ -22,11 +22,13 @@
     </div>
 
     <div class="mb-8 rounded-md border border-indigo-100 bg-indigo-50 p-4 text-indigo-950">
-        <p class="font-semibold">This name has not been listed on LearnHNS Market yet.</p>
+        <p class="font-semibold">
+            {% if watcher_count == 1 %}1 person is watching this unlisted name.{% elif watcher_count > 1 %}{{ watcher_count }} people are watching this unlisted name.{% else %}This name has not been listed on LearnHNS Market yet.{% endif %}
+        </p>
         <p class="mt-1 text-sm text-indigo-900">You can still watch it with a GFAVIP account and come back if it becomes pending or buyable later.</p>
         <div class="mt-4">
             {% if current_account %}
-                <button type="button" data-watch-name="{{ profile.name }}" class="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Watch name</button>
+                <button type="button" data-watch-name="{{ profile.name }}" class="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">{% if watcher_count > 0 %}Join {{ watcher_count }} watcher{% if watcher_count != 1 %}s{% endif %}{% else %}Watch name{% endif %}</button>
                 <span id="watch-message" class="ml-3 text-sm font-medium"></span>
             {% else %}
                 <a href="{{ url_for('account.login_page', next=request.path) }}" class="inline-block rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700">Login to watch</a>

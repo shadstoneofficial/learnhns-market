@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+
+{% block title %}Marketplace stats | LearnHNS Market{% endblock %}
+{% block meta_description %}LearnHNS Market statistics for Handshake name sales, marketplace volume, active inventory, and public watcher demand.{% endblock %}
+
+{% block content %}
+<div class="mb-8 text-center sm:text-left">
+    <h1 class="mb-2 text-3xl font-bold">Marketplace Stats</h1>
+    <p class="text-gray-600">Sales, inventory, and public watchlist demand across LearnHNS Market.</p>
+</div>
+
+<div class="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">All-time volume</p>
+        <p class="mt-2 text-3xl font-bold text-gray-900">{{ "{:,.2f}".format(stats.allTimeVolume) }} HNS</p>
+    </div>
+    <div class="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">30-day volume</p>
+        <p class="mt-2 text-3xl font-bold text-gray-900">{{ "{:,.2f}".format(stats.volume30d) }} HNS</p>
+    </div>
+    <div class="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Completed sales</p>
+        <p class="mt-2 text-3xl font-bold text-gray-900">{{ "{:,}".format(stats.completedSaleCount) }}</p>
+    </div>
+    <div class="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Public watchers</p>
+        <p class="mt-2 text-3xl font-bold text-gray-900">{{ "{:,}".format(stats.totalWatcherCount) }}</p>
+    </div>
+    <div class="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Active listings</p>
+        <p class="mt-2 text-3xl font-bold text-gray-900">{{ "{:,}".format(stats.activeListingCount) }}</p>
+    </div>
+    <div class="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Active inventory</p>
+        <p class="mt-2 text-3xl font-bold text-gray-900">{{ "{:,.2f}".format(stats.activeInventoryValue) }} HNS</p>
+    </div>
+    <div class="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Pending listings</p>
+        <p class="mt-2 text-3xl font-bold text-gray-900">{{ "{:,}".format(stats.pendingListingCount) }}</p>
+    </div>
+    <div class="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Tracked names</p>
+        <p class="mt-2 text-3xl font-bold text-gray-900">{{ "{:,}".format(stats.watchedNameCount) }}</p>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <section class="rounded-lg border border-gray-100 bg-white shadow-sm">
+        <div class="border-b border-gray-100 px-5 py-4">
+            <h2 class="text-xl font-bold text-gray-900">Top Sales All Time</h2>
+        </div>
+        <div class="divide-y divide-gray-100">
+            {% for sale in stats.topSalesAllTime %}
+            <a href="{{ sale.url }}" class="grid grid-cols-[2rem_1fr_auto] items-center gap-3 px-5 py-4 hover:bg-gray-50">
+                <span class="text-sm font-semibold text-gray-400">{{ loop.index }}</span>
+                <span class="min-w-0">
+                    <span class="block truncate font-semibold text-indigo-700">{{ display_name(sale.name) }}/</span>
+                    <span class="block text-xs text-gray-500">{% if sale.soldAt %}{{ sale.soldAt.strftime('%Y-%m-%d') }}{% else %}Unknown date{% endif %}</span>
+                </span>
+                <span class="font-semibold text-gray-900">{{ "{:,.2f}".format(sale.priceHns) }} HNS</span>
+            </a>
+            {% else %}
+            <div class="px-5 py-10 text-center text-gray-500">No completed sales yet.</div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="rounded-lg border border-gray-100 bg-white shadow-sm">
+        <div class="border-b border-gray-100 px-5 py-4">
+            <h2 class="text-xl font-bold text-gray-900">Top Sales Last 30 Days</h2>
+        </div>
+        <div class="divide-y divide-gray-100">
+            {% for sale in stats.topSales30d %}
+            <a href="{{ sale.url }}" class="grid grid-cols-[2rem_1fr_auto] items-center gap-3 px-5 py-4 hover:bg-gray-50">
+                <span class="text-sm font-semibold text-gray-400">{{ loop.index }}</span>
+                <span class="min-w-0">
+                    <span class="block truncate font-semibold text-indigo-700">{{ display_name(sale.name) }}/</span>
+                    <span class="block text-xs text-gray-500">{% if sale.soldAt %}{{ sale.soldAt.strftime('%Y-%m-%d') }}{% else %}Unknown date{% endif %}</span>
+                </span>
+                <span class="font-semibold text-gray-900">{{ "{:,.2f}".format(sale.priceHns) }} HNS</span>
+            </a>
+            {% else %}
+            <div class="px-5 py-10 text-center text-gray-500">No completed sales in the last 30 days.</div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="rounded-lg border border-gray-100 bg-white shadow-sm">
+        <div class="border-b border-gray-100 px-5 py-4">
+            <h2 class="text-xl font-bold text-gray-900">Most Watched Names</h2>
+        </div>
+        <div class="divide-y divide-gray-100">
+            {% for row in stats.mostWatched %}
+            <a href="{{ row.url }}" class="grid grid-cols-[2rem_1fr_auto] items-center gap-3 px-5 py-4 hover:bg-gray-50">
+                <span class="text-sm font-semibold text-gray-400">{{ loop.index }}</span>
+                <span class="min-w-0">
+                    <span class="block truncate font-semibold text-indigo-700">{{ display_name(row.name) }}/</span>
+                    <span class="block text-xs text-gray-500">{{ row.status }}{% if row.priceHns %} · {{ "{:,.2f}".format(row.priceHns) }} HNS{% endif %}</span>
+                </span>
+                <span class="font-semibold text-gray-900">{{ row.watcherCount }} watching</span>
+            </a>
+            {% else %}
+            <div class="px-5 py-10 text-center text-gray-500">No watched names yet.</div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="rounded-lg border border-gray-100 bg-white shadow-sm">
+        <div class="border-b border-gray-100 px-5 py-4">
+            <h2 class="text-xl font-bold text-gray-900">Monthly Volume</h2>
+        </div>
+        <div class="divide-y divide-gray-100">
+            {% for month in stats.monthlyVolume %}
+            <div class="grid grid-cols-[6rem_1fr_auto] items-center gap-3 px-5 py-4">
+                <span class="font-semibold text-gray-700">{{ month.month }}</span>
+                <span class="h-2 overflow-hidden rounded bg-gray-100">
+                    {% set share = (month.volumeHns / stats.allTimeVolume * 100) if stats.allTimeVolume else 0 %}
+                    <span class="block h-full rounded bg-indigo-500" style="width: {{ "%.2f"|format(share) }}%"></span>
+                </span>
+                <span class="text-right text-sm font-semibold text-gray-900">
+                    {{ "{:,.2f}".format(month.volumeHns) }} HNS
+                    <span class="block text-xs font-medium text-gray-500">{{ month.saleCount }} sale{% if month.saleCount != 1 %}s{% endif %}</span>
+                </span>
+            </div>
+            {% else %}
+            <div class="px-5 py-10 text-center text-gray-500">No monthly volume yet.</div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}

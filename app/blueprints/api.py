@@ -12,6 +12,7 @@ from app.utils import (
     sanitize_html,
     send_gfavip_webhook,
 )
+from app.watchers import watcher_counts_for_names
 import os
 import json
 import re
@@ -24,6 +25,24 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day"])
 
 SHAKEDEX_TRANSFER_LOCKUP = 288
 PENDING_TERMINAL_STATUSES = {'active', 'cancelled', 'expired', 'failed'}
+
+
+@api_bp.route('/v2/watchers/counts', methods=['GET'])
+def watcher_counts():
+    raw_names = request.args.getlist('names')
+    if not raw_names and request.args.get('name'):
+        raw_names = request.args.getlist('name')
+    names = []
+    for value in raw_names:
+        names.extend(str(value or '').split(','))
+    names = [
+        str(name or '').strip().lower().rstrip('/')
+        for name in names
+        if str(name or '').strip()
+    ]
+    if len(names) > 100:
+        return jsonify({'error': 'At most 100 names can be requested'}), 400
+    return jsonify({'counts': watcher_counts_for_names(names)})
 
 
 def _bob_auction_from_listing(listing):
