@@ -86,10 +86,43 @@
     </section>
 
     <section class="rounded-lg border border-gray-100 bg-white shadow-sm">
-        <div class="border-b border-gray-100 px-5 py-4">
+        <div class="flex flex-col gap-3 border-b border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-xl font-bold text-gray-900">Most Watched Names</h2>
+            <div class="inline-flex overflow-hidden rounded border border-gray-300 bg-white text-sm">
+                <button type="button" data-watch-filter="active" class="bg-indigo-50 px-3 py-2 font-semibold text-indigo-700">Active</button>
+                <button type="button" data-watch-filter="inactive" class="border-l border-gray-300 px-3 py-2 font-semibold text-gray-600 hover:bg-gray-50">Sold / inactive</button>
+                <button type="button" data-watch-filter="all" class="border-l border-gray-300 px-3 py-2 font-semibold text-gray-600 hover:bg-gray-50">All</button>
+            </div>
         </div>
-        <div class="divide-y divide-gray-100">
+        <div data-watch-panel="active" class="divide-y divide-gray-100">
+            {% for row in stats.mostWatchedActive %}
+            <a href="{{ row.url }}" class="grid grid-cols-[2rem_1fr_auto] items-center gap-3 px-5 py-4 hover:bg-gray-50">
+                <span class="text-sm font-semibold text-gray-400">{{ loop.index }}</span>
+                <span class="min-w-0">
+                    <span class="block truncate font-semibold text-indigo-700">{{ display_name(row.name) }}/</span>
+                    <span class="block text-xs text-gray-500">{{ row.status }}{% if row.priceHns %} · {{ "{:,.2f}".format(row.priceHns) }} HNS{% endif %}</span>
+                </span>
+                <span class="font-semibold text-gray-900">{{ row.watcherCount }} watching</span>
+            </a>
+            {% else %}
+            <div class="px-5 py-10 text-center text-gray-500">No watched active names yet.</div>
+            {% endfor %}
+        </div>
+        <div data-watch-panel="inactive" class="hidden divide-y divide-gray-100">
+            {% for row in stats.mostWatchedInactive %}
+            <a href="{{ row.url }}" class="grid grid-cols-[2rem_1fr_auto] items-center gap-3 px-5 py-4 hover:bg-gray-50">
+                <span class="text-sm font-semibold text-gray-400">{{ loop.index }}</span>
+                <span class="min-w-0">
+                    <span class="block truncate font-semibold text-indigo-700">{{ display_name(row.name) }}/</span>
+                    <span class="block text-xs text-gray-500">{{ row.status }}{% if row.priceHns %} · {{ "{:,.2f}".format(row.priceHns) }} HNS{% endif %}</span>
+                </span>
+                <span class="font-semibold text-gray-900">{{ row.watcherCount }} watching</span>
+            </a>
+            {% else %}
+            <div class="px-5 py-10 text-center text-gray-500">No watched sold or inactive names yet.</div>
+            {% endfor %}
+        </div>
+        <div data-watch-panel="all" class="hidden divide-y divide-gray-100">
             {% for row in stats.mostWatched %}
             <a href="{{ row.url }}" class="grid grid-cols-[2rem_1fr_auto] items-center gap-3 px-5 py-4 hover:bg-gray-50">
                 <span class="text-sm font-semibold text-gray-400">{{ loop.index }}</span>
@@ -128,4 +161,28 @@
         </div>
     </section>
 </div>
+<script>
+(() => {
+  const buttons = Array.from(document.querySelectorAll('[data-watch-filter]'));
+  const panels = Array.from(document.querySelectorAll('[data-watch-panel]'));
+  if (!buttons.length || !panels.length) return;
+
+  function setFilter(filter) {
+    for (const button of buttons) {
+      const active = button.dataset.watchFilter === filter;
+      button.classList.toggle('bg-indigo-50', active);
+      button.classList.toggle('text-indigo-700', active);
+      button.classList.toggle('text-gray-600', !active);
+      button.setAttribute('aria-pressed', String(active));
+    }
+    for (const panel of panels) {
+      panel.classList.toggle('hidden', panel.dataset.watchPanel !== filter);
+    }
+  }
+
+  for (const button of buttons) {
+    button.addEventListener('click', () => setFilter(button.dataset.watchFilter));
+  }
+})();
+</script>
 {% endblock %}

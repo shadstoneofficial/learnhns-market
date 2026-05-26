@@ -36,7 +36,7 @@ def watcher_count_for_name(name, network='main'):
     )
 
 
-def top_watched_names(limit=10, network='main', names=None):
+def top_watched_names(limit=10, network='main', names=None, exclude_names=None):
     query = (
         AccountWatchlistItem.query
         .with_entities(
@@ -54,6 +54,14 @@ def top_watched_names(limit=10, network='main', names=None):
         if not normalized:
             return []
         query = query.filter(AccountWatchlistItem.name.in_(normalized))
+    if exclude_names is not None:
+        excluded = sorted({
+            str(name or '').strip().lower().rstrip('/')
+            for name in exclude_names
+            if str(name or '').strip()
+        })
+        if excluded:
+            query = query.filter(AccountWatchlistItem.name.notin_(excluded))
 
     rows = (
         query

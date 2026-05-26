@@ -323,6 +323,8 @@ def _market_stats_payload(active_listings, pending_listings, sold_listings):
     volume_30d = sum((listing.price_hns for listing in sales_30d), Decimal('0'))
     monthly_volume = _monthly_sales_volume(sold_listings)
     most_watched = _most_watched_payload(active_listings, pending_listings)
+    most_watched_active = _most_watched_payload(active_listings, pending_listings, scope='active')
+    most_watched_inactive = _most_watched_payload(active_listings, pending_listings, scope='inactive')
 
     return {
         'activeListingCount': len(active_listings),
@@ -336,6 +338,8 @@ def _market_stats_payload(active_listings, pending_listings, sold_listings):
         'topSalesAllTime': _top_sales_payload(sold_listings, limit=10),
         'topSales30d': _top_sales_payload(sales_30d, limit=10),
         'mostWatched': most_watched,
+        'mostWatchedActive': most_watched_active,
+        'mostWatchedInactive': most_watched_inactive,
         'monthlyVolume': monthly_volume,
     }
 
@@ -379,10 +383,16 @@ def _monthly_sales_volume(listings):
     ]
 
 
-def _most_watched_payload(active_listings, pending_listings):
+def _most_watched_payload(active_listings, pending_listings, scope='all'):
     active_by_name = {listing.name: listing for listing in active_listings}
     pending_by_name = {pending.name: pending for pending in pending_listings}
-    watched = top_watched_names(limit=10)
+    active_names = set(active_by_name.keys())
+    if scope == 'active':
+        watched = top_watched_names(limit=10, names=active_names)
+    elif scope == 'inactive':
+        watched = top_watched_names(limit=10, exclude_names=active_names)
+    else:
+        watched = top_watched_names(limit=10)
     rows = []
     for row in watched:
         name = row['name']
