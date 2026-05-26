@@ -477,6 +477,11 @@ def _listing_coin_ref(listing):
     return tx_hash, output_index
 
 
+def _listing_has_unverified_sale_claim(listing):
+    proof = listing.proof_json if isinstance(listing.proof_json, dict) else {}
+    return bool(proof.get("saleClaimedWithoutTx"))
+
+
 def _listing_lock_is_current_owner(listing, transfer_status=None):
     lock_tx_hash, lock_output_index = _listing_coin_ref(listing)
     if not lock_tx_hash:
@@ -765,6 +770,13 @@ def _resolve_sale_pending_listing(listing):
 
     transfer_status = _name_transfer_status(listing.name)
     if _listing_lock_is_current_owner(listing, transfer_status=transfer_status):
+        if _listing_has_unverified_sale_claim(listing):
+            current_app.logger.info(
+                "Keeping listing %s sale-pending: seller reported a sale but no verified transfer tx is visible yet.",
+                listing.name,
+            )
+            return listing
+
         listing.status = 'active'
         listing.sold_at = None
         listing.sale_tx_hash = None
