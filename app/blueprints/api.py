@@ -482,6 +482,16 @@ def _listing_has_unverified_sale_claim(listing):
     return bool(proof.get("saleClaimedWithoutTx"))
 
 
+def _restore_listing_to_active(listing, reason):
+    listing.status = 'active'
+    listing.sold_at = None
+    listing.sale_tx_hash = None
+    listing.transfer_start_tx_hash = None
+    db.session.commit()
+    current_app.logger.info(reason, listing.name)
+    return listing
+
+
 def _listing_lock_is_current_owner(listing, transfer_status=None):
     lock_tx_hash, lock_output_index = _listing_coin_ref(listing)
     if not lock_tx_hash:
@@ -518,10 +528,19 @@ def _listing_lock_coin_is_spent(listing):
     if _listing_lock_is_current_owner(listing, transfer_status=transfer_status):
         return False
     if transfer_status.get('status') in {'transfer-lockup', 'ready-to-finalize'}:
+        verified_sale_tx_hash = _find_verified_listing_sale_tx_hash(listing)
+        if not verified_sale_tx_hash:
+            current_app.logger.info(
+                "Keeping Shakedex listing %s active: transfer state does not spend the listing lock coin.",
+                listing.name,
+            )
+            return False
+
         listing.status = 'sale-pending'
+        listing.transfer_start_tx_hash = verified_sale_tx_hash
         db.session.commit()
         current_app.logger.info(
-            "Marked Shakedex listing %s sale-pending because an active transfer was detected.",
+            "Marked Shakedex listing %s sale-pending because a buyer transfer spends the listing lock coin.",
             listing.name,
         )
         return True
@@ -539,15 +558,27 @@ def _listing_lock_coin_is_spent(listing):
         )
         return False
 
-    listing.status = 'sale-pending'
-    db.session.commit()
+    verified_sale_tx_hash = _find_verified_listing_sale_tx_hash(listing)
+    if verified_sale_tx_hash:
+        listing.status = 'sale-pending'
+        listing.transfer_start_tx_hash = verified_sale_tx_hash
+        db.session.commit()
+        current_app.logger.info(
+            "Marked Shakedex listing %s sale-pending because lock coin %s/%s is spent by verified transfer %s.",
+            listing.name,
+            tx_hash,
+            output_index,
+            verified_sale_tx_hash,
+        )
+        return True
+
     current_app.logger.info(
-        "Marked Shakedex listing %s sale-pending because lock coin %s/%s is spent.",
+        "Keeping Shakedex listing %s active: lock coin %s/%s is unavailable but no verified buyer transfer was found.",
         listing.name,
         tx_hash,
         output_index,
     )
-    return True
+    return False
 
 
 def _tx_spends_listing_coin(tx, listing):
@@ -740,8 +771,6 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None, transfer_start_tx_ha
         if status != 404:
             return False, {"error": message}, status
 
-        listing.status = 'sale-pending'
-        db.session.commit()
         verified_sale_tx_hash = _find_verified_listing_sale_tx_hash(listing)
         if verified_sale_tx_hash:
             return _mark_listing_sold_if_spent(
@@ -752,7 +781,7 @@ def _mark_listing_sold_if_spent(listing, sale_tx_hash=None, transfer_start_tx_ha
         return False, {
             "sold": False,
             "status": listing.status,
-            "message": "The Shakedex locking coin is no longer available. The listing has been removed from active results while waiting for sale transaction verification.",
+            "message": "The Shakedex locking coin is not currently available, but no verified buyer transfer was found. The listing status was left unchanged.",
             "url": f"/listing/{listing.name}",
         }, 200
 
@@ -777,16 +806,10 @@ def _resolve_sale_pending_listing(listing):
             )
             return listing
 
-        listing.status = 'active'
-        listing.sold_at = None
-        listing.sale_tx_hash = None
-        listing.transfer_start_tx_hash = None
-        db.session.commit()
-        current_app.logger.info(
+        return _restore_listing_to_active(
+            listing,
             "Restored listing %s to active: name owner is still the Shakedex lock output.",
-            listing.name,
         )
-        return listing
 
     verified_sale_tx_hash = _find_verified_listing_sale_tx_hash(listing)
     if verified_sale_tx_hash:
@@ -796,6 +819,15 @@ def _resolve_sale_pending_listing(listing):
             verified_sale_tx_hash,
         )
         return listing
+
+    if (
+        not _listing_has_unverified_sale_claim(listing)
+        and transfer_status.get('status') in {'transfer-lockup', 'ready-to-finalize'}
+    ):
+        return _restore_listing_to_active(
+            listing,
+            "Restored listing %s to active: active transfer state does not spend the Shakedex lock output.",
+        )
 
     if transfer_status.get('status') != 'finalized':
         return listing
