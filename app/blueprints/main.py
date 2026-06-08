@@ -11,8 +11,11 @@ from app.blueprints.api import _fetch_explorer_tx
 from app.blueprints.api import _fetch_hsd_tx
 from app.blueprints.api import _fetch_hsd_name_info
 from app.blueprints.api import _name_transfer_status
+from app.blueprints.api import _mark_listing_sold_if_spent
 from app.blueprints.api import _pending_listing_payload
+from app.blueprints.api import _refreshable_listing_for_spend
 from app.blueprints.api import _resolve_sale_pending_listing
+from app.blueprints.api import _validate_hex_hash
 from app.blueprints.api import SHAKEDEX_TRANSFER_LOCKUP
 from app.marketplace_indexer import event_for_tx
 from app.models import Listing, PendingListing
@@ -266,21 +269,59 @@ def listing_detail(name):
 @main_bp.route('/listing/<name>/success')
 def listing_success(name):
     normalized_name = name.lower().rstrip('/')
-    tx_hash = request.args.get('tx', '').strip()
+    tx_hash, tx_hash_error = _validate_hex_hash(request.args.get('tx'), 'tx')
     listing = (
         Listing.query
         .filter_by(name=normalized_name)
         .order_by(Listing.created_at.desc())
         .first()
     )
+    market_sync = None
 
     if not listing:
         return redirect(url_for('main.listing_detail', name=normalized_name))
+
+    if tx_hash_error:
+        message, _status = tx_hash_error
+        market_sync = {
+            'status': 'error',
+            'message': message,
+        }
+    elif tx_hash:
+        refresh_listing, payload, status = _refreshable_listing_for_spend(
+            normalized_name,
+            tx_hash,
+        )
+        if refresh_listing:
+            _sold, payload, status = _mark_listing_sold_if_spent(
+                refresh_listing,
+                tx_hash,
+                tx_hash,
+            )
+            listing = refresh_listing
+
+        if status == 200 and payload and payload.get('sold'):
+            market_sync = {
+                'status': 'success',
+                'message': 'This sale has been recorded in LearnHNS Market.',
+            }
+        else:
+            current_app.logger.warning(
+                "Could not record purchase success tx for %s (%s): %s",
+                normalized_name,
+                tx_hash,
+                payload,
+            )
+            market_sync = {
+                'status': 'pending',
+                'message': 'The purchase transaction was accepted, but LearnHNS Market has not verified the sale record yet.',
+            }
 
     return render_template(
         'purchase_success.html',
         listing=listing,
         tx_hash=tx_hash,
+        market_sync=market_sync,
     )
 
 

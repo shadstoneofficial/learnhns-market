@@ -30,6 +30,25 @@
     </div>
     {% endif %}
 
+    {% if market_sync %}
+        {% if market_sync.status == 'success' %}
+        <div class="mt-4 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-950">
+            <p class="font-semibold">Market sale record updated</p>
+            <p class="mt-1">{{ market_sync.message }}</p>
+        </div>
+        {% elif market_sync.status == 'pending' %}
+        <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <p class="font-semibold">Market sale record pending</p>
+            <p class="mt-1">{{ market_sync.message }}</p>
+        </div>
+        {% else %}
+        <div class="mt-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-950">
+            <p class="font-semibold">Market sale record needs attention</p>
+            <p class="mt-1">{{ market_sync.message }}</p>
+        </div>
+        {% endif %}
+    {% endif %}
+
     <div class="mt-8 grid gap-4 md:grid-cols-3">
         <div class="rounded-md border border-gray-200 bg-gray-50 p-4">
             <p class="font-semibold text-gray-900">1. Wait for lockup</p>

@@ -199,6 +199,37 @@
           shakeMessage.textContent = message;
         }
 
+        function wait(ms) {
+          return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function recordSaleWithRetry(saleTxHash) {
+          let lastError = null;
+
+          for (const delay of [0, 1500, 4000]) {
+            if (delay) await wait(delay);
+
+            try {
+              const response = await fetch(`/api/v2/listings/${encodeURIComponent(listingName)}/refresh-status`, {
+                method: 'POST',
+                headers: {'content-type': 'application/json'},
+                body: JSON.stringify({saleTxHash}),
+              });
+              const payload = await response.json().catch(() => ({}));
+
+              if (response.ok && payload.sold) {
+                return payload;
+              }
+
+              lastError = new Error(payload.error || payload.message || `LearnHNS Market returned HTTP ${response.status}`);
+            } catch (err) {
+              lastError = err;
+            }
+          }
+
+          throw lastError || new Error('LearnHNS Market could not verify the sale yet.');
+        }
+
         bobButton.addEventListener('click', () => {
           const bobLink = bobButton.getAttribute('data-bob-wallet-link');
           if (!bobLink) {
@@ -236,13 +267,13 @@
               throw new Error('LearnHNS Wallet did not return a purchase transaction hash.');
             }
 
-            await fetch(`/api/v2/listings/${encodeURIComponent(listingName)}/refresh-status`, {
-              method: 'POST',
-              headers: {'content-type': 'application/json'},
-              body: JSON.stringify({saleTxHash: fulfillment.fulfillmentTxHash}),
-            });
-
-            showShakeMessage(`Purchase transaction accepted: ${fulfillment.fulfillmentTxHash}. Opening next steps...`, 'success');
+            shakeButton.textContent = 'Recording sale...';
+            try {
+              await recordSaleWithRetry(fulfillment.fulfillmentTxHash);
+              showShakeMessage(`Purchase transaction accepted: ${fulfillment.fulfillmentTxHash}. Opening next steps...`, 'success');
+            } catch (syncErr) {
+              showShakeMessage(`Purchase transaction accepted: ${fulfillment.fulfillmentTxHash}. Market sale record is still syncing.`, 'warning');
+            }
             window.location.href = `${successUrl}?tx=${encodeURIComponent(fulfillment.fulfillmentTxHash)}`;
           } catch (err) {
             showShakeMessage(err && err.message ? err.message : 'LearnHNS Wallet purchase could not be started.', 'error');
