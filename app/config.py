@@ -54,6 +54,22 @@ class Config:
     ACCOUNT_COOKIE_SECURE = os.getenv('ACCOUNT_COOKIE_SECURE', '').lower() in {'1', 'true', 'yes'}
     FREE_WATCHLIST_LIMIT = int(os.getenv('FREE_WATCHLIST_LIMIT', '10'))
     PRO_WATCHLIST_LIMIT = int(os.getenv('PRO_WATCHLIST_LIMIT', '100'))
+    SUPPORT_WALL_ADMIN_GFAVIP_IDS = {
+        item.strip()
+        for item in os.getenv('SUPPORT_WALL_ADMIN_GFAVIP_IDS', '').split(',')
+        if item.strip()
+    }
+    SUPPORT_WALL_ADMIN_EMAILS = {
+        item.strip().lower()
+        for item in os.getenv('SUPPORT_WALL_ADMIN_EMAILS', '').split(',')
+        if item.strip()
+    }
+    SUPPORT_WALL_ADMIN_USERNAMES = {
+        item.strip().lower()
+        for item in os.getenv('SUPPORT_WALL_ADMIN_USERNAMES', '').split(',')
+        if item.strip()
+    }
+    SUPPORT_WALL_API_CACHE_SECONDS = int(os.getenv('SUPPORT_WALL_API_CACHE_SECONDS', '60'))
 
     # Mailgun renewal alerts.
     MAILGUN_API_KEY = os.getenv('MAILGUN_API_KEY')

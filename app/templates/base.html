@@ -26,6 +26,7 @@
                 <a href="{{ url_for('main.sold') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Sold</a>
                 <a href="{{ url_for('main.stats') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Stats</a>
                 <a href="{{ url_for('main.upload') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Upload</a>
+                <a href="{{ url_for('support_wall.submit') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Support Wall</a>
                 {% if current_account %}
                     <a href="{{ url_for('account.watchlist_page') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Watchlist</a>
                     <a href="{{ url_for('account.alerts_page') }}" class="text-gray-600 hover:text-indigo-600 font-medium">Alerts</a>
@@ -44,6 +45,7 @@
                             <a href="{{ url_for('account.settings_page') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">Settings</a>
                             <a href="{{ url_for('account.watchlist_page') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">Saved Watchlist</a>
                             <a href="{{ url_for('account.alerts_page') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">Renewal Alerts</a>
+                            <a href="{{ url_for('support_wall.my_posts') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">Support Wall Posts</a>
                             <form action="{{ url_for('account.logout') }}" method="post" class="border-t border-gray-100">
                                 <button type="submit" class="block w-full px-4 py-3 text-left text-sm font-semibold text-red-600 hover:bg-red-50">Logout</button>
                             </form>
@@ -67,11 +69,13 @@
             <a href="{{ url_for('main.sold') }}" class="font-medium text-gray-600 hover:text-indigo-600">Sold</a>
             <a href="{{ url_for('main.stats') }}" class="font-medium text-gray-600 hover:text-indigo-600">Stats</a>
             <a href="{{ url_for('main.upload') }}" class="font-medium text-gray-600 hover:text-indigo-600">Upload</a>
+            <a href="{{ url_for('support_wall.submit') }}" class="font-medium text-gray-600 hover:text-indigo-600">Support Wall</a>
             <a href="{{ url_for('main.docs') }}" class="font-medium text-gray-600 hover:text-indigo-600">Docs</a>
             <a href="{{ url_for('main.status') }}" class="font-medium text-gray-600 hover:text-indigo-600">Status</a>
             {% if current_account %}
                 <a href="{{ url_for('account.watchlist_page') }}" class="font-medium text-gray-600 hover:text-indigo-600">Watchlist</a>
                 <a href="{{ url_for('account.alerts_page') }}" class="font-medium text-gray-600 hover:text-indigo-600">Alerts</a>
+                <a href="{{ url_for('support_wall.my_posts') }}" class="font-medium text-gray-600 hover:text-indigo-600">Wall Posts</a>
             {% else %}
                 <a href="{{ url_for('account.login_page', next=request.full_path if request.query_string else request.path) }}" class="font-medium text-indigo-600 hover:text-indigo-700">Login</a>
             {% endif %}

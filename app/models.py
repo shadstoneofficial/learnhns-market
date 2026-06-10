@@ -194,6 +194,12 @@ class Account(db.Model):
     sessions = db.relationship('AccountSession', backref='account', lazy=True, cascade='all, delete-orphan')
     watchlist_items = db.relationship('AccountWatchlistItem', backref='account', lazy=True, cascade='all, delete-orphan')
     alert_preferences = db.relationship('AccountAlertPreference', backref='account', uselist=False, cascade='all, delete-orphan')
+    support_wall_posts = db.relationship(
+        'SupportWallPost',
+        foreign_keys='SupportWallPost.account_id',
+        backref='account',
+        lazy=True,
+    )
 
 
 class AccountSession(db.Model):
@@ -268,4 +274,48 @@ class AccountAlertEvent(db.Model):
             'expiration_height',
             name='uq_account_alert_event_cadence',
         ),
+    )
+
+
+class SupportWallPost(db.Model):
+    __tablename__ = 'support_wall_posts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True, index=True)
+    submitted_by_account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True, index=True)
+    approved_by_account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True, index=True)
+
+    submitted_on_behalf_of = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    public_name = db.Column(db.String(120), nullable=False)
+    role = db.Column(db.String(80), nullable=False)
+    location = db.Column(db.String(120), nullable=True)
+    message = db.Column(db.Text, nullable=False)
+    link = db.Column(db.String(500), nullable=True)
+    hns_name = db.Column(db.String(255), nullable=True, index=True)
+
+    status = db.Column(db.String(40), default='pending', nullable=False, index=True)
+    verification_status = db.Column(db.String(40), default='unverified', nullable=False, index=True)
+    verification_method = db.Column(db.String(40), nullable=True, index=True)
+    verification_payload_private = db.Column(db.Text, nullable=True)
+    verification_nonce = db.Column(db.String(120), nullable=True, unique=True, index=True)
+
+    source_channel = db.Column(db.String(40), nullable=True, index=True)
+    source_note_private = db.Column(db.Text, nullable=True)
+    consent_status = db.Column(db.String(40), default='unknown', nullable=False, index=True)
+    admin_note_private = db.Column(db.Text, nullable=True)
+    badges_json = db.Column(db.JSON, default=list, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    approved_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    submitted_by_account = db.relationship(
+        'Account',
+        foreign_keys=[submitted_by_account_id],
+        lazy=True,
+    )
+    approved_by_account = db.relationship(
+        'Account',
+        foreign_keys=[approved_by_account_id],
+        lazy=True,
     )

@@ -6,6 +6,7 @@ from app.models import db
 from app.blueprints.main import main_bp
 from app.blueprints.api import api_bp
 from app.blueprints.account import account_bp
+from app.blueprints.support_wall import support_wall_bp
 from app.auth import current_account
 import os
 
@@ -36,6 +37,7 @@ def create_app():
     # Blueprints
     app.register_blueprint(main_bp)
     app.register_blueprint(account_bp)
+    app.register_blueprint(support_wall_bp)
     app.register_blueprint(api_bp, url_prefix='/api')
 
     @app.context_processor

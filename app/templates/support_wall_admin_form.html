@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ 'Edit' if post else 'New' }} Support Wall Post | LearnHNS Market{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-5xl">
+  <div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">Admin</p>
+      <h1 class="mt-2 text-3xl font-bold">{{ 'Edit support-wall post' if post else 'Add support-wall post' }}</h1>
+      <p class="mt-2 text-gray-600">Use this for Telegram/private-chat submissions and moderation edits.</p>
+    </div>
+    <a href="{{ url_for('support_wall.admin_index') }}" class="inline-flex justify-center rounded border border-gray-300 px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50">Back to queue</a>
+  </div>
+
+  {% if errors %}
+  <div class="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+    <ul class="list-disc pl-5">
+      {% for error in errors %}
+      <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="post" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+    <div class="grid gap-5 sm:grid-cols-2">
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Name or handle</span>
+        <input name="public_name" value="{{ form.get('public_name', post.public_name if post else '') }}" maxlength="120" required class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Role</span>
+        <input name="role" value="{{ form.get('role', post.role if post else '') }}" maxlength="80" required class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </label>
+    </div>
+
+    <div class="mt-5 grid gap-5 sm:grid-cols-3">
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Location</span>
+        <input name="location" value="{{ form.get('location', post.location if post else '') }}" maxlength="120" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">HNS name</span>
+        <input name="hns_name" value="{{ form.get('hns_name', post.hns_name if post else '') }}" maxlength="255" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Link</span>
+        <input name="link" value="{{ form.get('link', post.link if post else '') }}" maxlength="500" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </label>
+    </div>
+
+    <label class="mt-5 block">
+      <span class="mb-2 block text-sm font-semibold text-gray-700">Message</span>
+      <textarea name="message" rows="5" maxlength="700" required class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">{{ form.get('message', post.message if post else '') }}</textarea>
+    </label>
+
+    <div class="mt-5 grid gap-5 sm:grid-cols-3">
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Status</span>
+        {% set current_status = form.get('status', post.status if post else 'pending_review') %}
+        <select name="status" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          {% for item in ['pending', 'pending_review', 'needs_consent', 'approved', 'rejected', 'hidden'] %}
+          <option value="{{ item }}" {{ 'selected' if current_status == item else '' }}>{{ item.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Consent</span>
+        {% set current_consent = form.get('consent_status', post.consent_status if post else 'explicit_consent') %}
+        <select name="consent_status" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          {% for item in ['self_submitted', 'explicit_consent', 'needs_consent', 'unknown'] %}
+          <option value="{{ item }}" {{ 'selected' if current_consent == item else '' }}>{{ item.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Source channel</span>
+        {% set current_source = form.get('source_channel', post.source_channel if post else 'telegram') %}
+        <select name="source_channel" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          {% for item in ['self', 'telegram', 'x', 'email', 'discord', 'in-person', 'other'] %}
+          <option value="{{ item }}" {{ 'selected' if current_source == item else '' }}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <div class="mt-5 grid gap-5 sm:grid-cols-3">
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Verification status</span>
+        {% set current_verification = form.get('verification_status', post.verification_status if post else 'admin_attested') %}
+        <select name="verification_status" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          {% for item in ['unverified', 'gfavip_logged_in', 'verified_hns_name', 'admin_attested', 'pending_hns_txt'] %}
+          <option value="{{ item }}" {{ 'selected' if current_verification == item else '' }}>{{ item.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Verification method</span>
+        <input name="verification_method" value="{{ form.get('verification_method', post.verification_method if post else 'admin') }}" maxlength="40" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Badges</span>
+        <input name="badges" value="{{ form.get('badges', (post.badges_json or [])|join(', ') if post else '') }}" maxlength="240" placeholder="Builder, Domain owner" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </label>
+    </div>
+
+    <div class="mt-5 grid gap-5 sm:grid-cols-2">
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Private source note</span>
+        <textarea name="source_note_private" rows="4" maxlength="1000" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">{{ form.get('source_note_private', post.source_note_private if post else '') }}</textarea>
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-sm font-semibold text-gray-700">Private admin note</span>
+        <textarea name="admin_note_private" rows="4" maxlength="1000" class="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">{{ form.get('admin_note_private', post.admin_note_private if post else '') }}</textarea>
+      </label>
+    </div>
+
+    {% if post and post.verification_nonce %}
+    <div class="mt-5 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+      TXT proof for {{ post.hns_name }}/: <code>{{ post.verification_nonce }}</code>
+    </div>
+    {% endif %}
+
+    <div class="mt-6">
+      <button class="rounded bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700">Save post</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
