@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for
 
 from app.auth import current_account, login_required
-from app.models import SupportWallPost, db
+from app.models import Account, SupportWallPost, db
 
 support_wall_bp = Blueprint('support_wall', __name__)
 
@@ -14,6 +14,7 @@ POST_STATUSES = {'pending', 'pending_review', 'needs_consent', 'approved', 'reje
 CONSENT_STATUSES = {'self_submitted', 'explicit_consent', 'needs_consent', 'unknown'}
 SOURCE_CHANNELS = {'self', 'telegram', 'x', 'email', 'discord', 'in-person', 'other'}
 VERIFICATION_STATUSES = {'unverified', 'gfavip_logged_in', 'verified_hns_name', 'admin_attested', 'pending_hns_txt'}
+SUPPORT_WALL_ROLES = {'none', 'reviewer', 'admin'}
 
 
 def _support_wall_admin_required(view):
@@ -38,7 +39,8 @@ def _is_support_wall_admin(account):
     usernames = current_app.config.get('SUPPORT_WALL_ADMIN_USERNAMES') or set()
 
     return (
-        account.gfavip_user_id in ids
+        account.support_wall_role == 'admin'
+        or account.gfavip_user_id in ids
         or (account.email and account.email.lower() in emails)
         or (account.username and account.username.lower() in usernames)
     )
@@ -96,6 +98,37 @@ def admin_index():
         for item in ['pending', 'pending_review', 'needs_consent', 'approved', 'rejected', 'hidden']
     }
     return render_template('support_wall_admin.html', posts=posts, status=status, counts=counts)
+
+
+@support_wall_bp.route('/admin/support-wall/admins', methods=['GET', 'POST'])
+@login_required
+@_support_wall_admin_required
+def admin_roles():
+    message = None
+    error = None
+    if request.method == 'POST':
+        lookup = str(request.form.get('account_lookup') or '').strip()
+        role = str(request.form.get('support_wall_role') or 'none').strip()
+        if role not in SUPPORT_WALL_ROLES:
+            error = 'Unsupported support-wall role.'
+        elif not lookup:
+            error = 'Enter a GFAVIP user id, email, or username.'
+        else:
+            account = _find_account(lookup)
+            if not account:
+                error = 'No account matched that GFAVIP id, email, or username. The user may need to log in once first.'
+            else:
+                account.support_wall_role = role
+                db.session.commit()
+                message = f'Updated {account.username or account.email or account.gfavip_user_id} to {role}.'
+
+    accounts = (
+        Account.query
+        .filter(Account.support_wall_role != 'none')
+        .order_by(Account.support_wall_role.desc(), Account.username.asc(), Account.email.asc())
+        .all()
+    )
+    return render_template('support_wall_admin_roles.html', accounts=accounts, message=message, error=error)
 
 
 @support_wall_bp.route('/admin/support-wall/new', methods=['GET', 'POST'])
@@ -359,3 +392,13 @@ def _clean_badges(value):
         if badge and badge not in badges:
             badges.append(badge)
     return badges[:6]
+
+
+def _find_account(lookup):
+    normalized = lookup.strip()
+    lowered = normalized.lower()
+    return (
+        Account.query.filter_by(gfavip_user_id=normalized).first()
+        or Account.query.filter(db.func.lower(Account.email) == lowered).first()
+        or Account.query.filter(db.func.lower(Account.username) == lowered).first()
+    )

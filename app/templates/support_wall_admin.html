@@ -9,7 +9,10 @@
     <h1 class="mt-2 text-3xl font-bold">Support wall queue</h1>
     <p class="mt-2 text-gray-600">Review public submissions and posts submitted on behalf of community members.</p>
   </div>
-  <a href="{{ url_for('support_wall.admin_new') }}" class="inline-flex justify-center rounded bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700">Add on behalf of someone</a>
+  <div class="flex flex-col gap-3 sm:flex-row">
+    <a href="{{ url_for('support_wall.admin_roles') }}" class="inline-flex justify-center rounded border border-gray-300 px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50">Manage admins</a>
+    <a href="{{ url_for('support_wall.admin_new') }}" class="inline-flex justify-center rounded bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700">Add on behalf of someone</a>
+  </div>
 </div>
 
 <div class="mb-6 flex flex-wrap gap-2">

@@ -186,6 +186,7 @@ class Account(db.Model):
     display_name = db.Column(db.String(255), nullable=True)
     gfavip_tier = db.Column(db.String(40), default='free', nullable=False, index=True)
     local_tier = db.Column(db.String(40), default='free', nullable=False, index=True)
+    support_wall_role = db.Column(db.String(40), default='none', nullable=False, index=True)
     email_verified_at = db.Column(db.DateTime, nullable=True)
     last_login_at = db.Column(db.DateTime, nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
